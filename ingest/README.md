@@ -35,7 +35,7 @@ then replaces each firm's identity fields and writes the committed, fictionalize
 `ground_truth.json`. Note that only the identities are fictionalized, not the quantitative
 record shapes (AUM, client counts, compensation, services, disciplinary item codes) — a reader
 with the public SEC roster could in principle link those values back to a registrant. Keeping
-them real is deliberate: they are exactly what the scorer compares a model's claims against.
+them real is deliberate: they are the precise values the scorer compares a model's claims against.
 Republishing unchanged data is a no-op (the version *is* the content), so
 `publish_registry.py` is safe to re-run whenever `ground_truth.json` changes.
 
