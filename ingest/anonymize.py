@@ -15,6 +15,7 @@ regenerating from the same roster always yields the same fictionalized file.
 import argparse
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -58,12 +59,21 @@ RETAINED_FREE_TEXT = (("services", "other_description"),
 IDENTITY_FIELDS = ("name", "legal_name", "crd", "sec_number", "city", "website")
 
 
+_NON_ALNUM = re.compile(r'[^0-9a-z]+')
+
+
+def _canonical(value):
+    """Lowercase and strip every separator, so "REAL FIRM, 0" matches
+    "REAL FIRM 0" and "REAL-FIRM-0" when looking for identity leaks."""
+    return _NON_ALNUM.sub('', value.casefold())
+
+
 def _identity_leak(firm, text):
-    folded = text.casefold()
+    folded = _canonical(text)
     for field in IDENTITY_FIELDS:
         value = firm.get(field)
         if (isinstance(value, str) and len(value.strip()) >= 4
-                and value.strip().casefold() in folded):
+                and _canonical(value) in folded):
             return field, value
     return None
 

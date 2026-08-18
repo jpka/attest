@@ -71,3 +71,12 @@ def test_retained_text_without_identity_leak_ok():
     firms[0]["compensation"] = {"other_description": ""}
     out = anonymize(firms)
     assert out[0]["services"]["other_description"] == "WRAP FEE MANAGEMENT PROGRAMS"
+
+
+def test_identity_leak_across_punctuation_variants():
+    firms = _make_firms(len(FICTIONAL))
+    firms[0]["services"] = {
+        "other_description": "REAL FIRM, 0 CUSTODIAL SERVICES",
+    }
+    with pytest.raises(SystemExit):
+        anonymize(firms)
