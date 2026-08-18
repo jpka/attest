@@ -34,7 +34,7 @@ content), so `publish_registry.py` is safe to re-run whenever `ground_truth.json
 
 ## Reproducing the committed roster
 
-The committed `ground_truth.json` (roster `794e76b2e12f`) was selected on 2026-08-11 from the
+The committed `ground_truth.json` (roster `3bcbcd032c48`) was selected on 2026-08-11 from the
 `IA_SEC_-_FIRM_ROSTER_FOIA_DOWNLOAD_-_34640308.CSV` release. `select_firms.py` is
 deterministic — the same roster CSV and the pinned `REFERENCE_DATE` produce the same five
 firms — so running it against that release yields the identical roster. Selection state is

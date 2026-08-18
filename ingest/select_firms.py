@@ -15,7 +15,7 @@ The default output is `agents/attest_orchestrator/ground_truth.json`, the review
 source `publish_registry.py` uploads to the Battery Registry. Pass --out to write
 elsewhere (a dry run, or the private `selected_firms.json` the premise test reads).
 
-Port 2026-08-19 from `resources/data/firms/csv_data/select_firms.py` in the private
+Port 2026-08-18 from `resources/data/firms/csv_data/select_firms.py` in the private
 root repo; that file is the same code that produced the premise-test ground truth,
 so a regeneration here is directly comparable with it. Line endings of the output
 depend on the platform (the committed source was written by `py -3` on Windows and
@@ -92,7 +92,18 @@ def main():
 
     with open(args.roster_csv, 'r', encoding='utf-8', errors='replace') as f:
         reader = csv.reader(f)
-        next(reader)
+        header = next(reader)
+        if header != list(adv.EXPECTED_HEADERS):
+            mismatch = next(
+                ((i, got, want) for i, (got, want)
+                 in enumerate(zip(header, adv.EXPECTED_HEADERS)) if got != want),
+                (min(len(header), len(adv.EXPECTED_HEADERS)), "end of header",
+                 "end of pinned header"),
+            )
+            raise SystemExit(
+                f"roster header does not match the pinned 2026-08-11 schema "
+                f"(column {mismatch[0]}: got {mismatch[1]!r}, expected {mismatch[2]!r})"
+            )
 
         for row in reader:
             if len(row) < adv.MIN_COLUMNS:

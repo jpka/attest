@@ -125,7 +125,7 @@ similar. A roster version and a battery version are comparable strings and a run
 Two properties fall out of content addressing. Republishing unchanged data is a no-op that
 lands on identical document paths, so the publisher is safe to re-run. And editing the source
 produces a *new* version rather than mutating one in place, so a roster is immutable under its
-own name — which is what makes "scored against roster 794e76b2e12f" a claim that means
+own name — which is what makes "scored against roster 3bcbcd032c48" a claim that means
 something a month later.
 
 `ATTEST_ROSTER_VERSION` pins a run to a specific roster. Unset means "follow
@@ -169,11 +169,11 @@ touches ADV data, not only in the Scorer.
 
 ## Next
 
-Aug 19 ✅: ADV ingestion — `adv_schema.py` and `select_firms.py` are ported to `ingest/`, so
+Aug 18 ✅: ADV ingestion — `adv_schema.py` and `select_firms.py` are ported to `ingest/`, so
 the roster is now generated from the SEC bulk data rather than hand-assembled. The pipeline,
 reproducibility notes and the known `is_fee_only` limitation (tracked for the Scorer phase)
 are in `ingest/README.md`. The registry layout does not change; only what feeds
-`ground_truth.json` does, and the committed roster `794e76b2e12f` regenerates identically
+`ground_truth.json` does, and the committed roster `3bcbcd032c48` regenerates identically
 from the 2026-08-11 SEC release.
 
 Aug 20: run the probe battery through the deployed runtime via Pub/Sub, recording both the
