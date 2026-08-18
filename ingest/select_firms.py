@@ -69,7 +69,7 @@ def classify(row):
         adv._yes(row, col) for col in adv.DISCIPLINARY_FIELDS
     )
     age = months_since(row[adv.C_SEC_STATUS_DATE])
-    is_recent = age is not None and age <= RECENT_REGISTRATION_MONTHS
+    is_recent = age is not None and 0 <= age <= RECENT_REGISTRATION_MONTHS
     is_thin_web = row[adv.C_WEBSITE_COUNT].strip() in ('0', '', 'N')
 
     if has_disciplinary:
@@ -92,11 +92,15 @@ def main():
 
     with open(args.roster_csv, 'r', encoding='utf-8', errors='replace') as f:
         reader = csv.reader(f)
-        header = next(reader)
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise SystemExit("roster is empty; expected the pinned 2026-08-11 header")
         if header != list(adv.EXPECTED_HEADERS):
             mismatch = next(
                 ((i, got, want) for i, (got, want)
-                 in enumerate(zip(header, adv.EXPECTED_HEADERS)) if got != want),
+                 in enumerate(zip(header, adv.EXPECTED_HEADERS, strict=False))
+                 if got != want),
                 (min(len(header), len(adv.EXPECTED_HEADERS)), "end of header",
                  "end of pinned header"),
             )
@@ -114,6 +118,8 @@ def main():
                 continue
 
             crd = row[adv.C_CRD].strip()
+            if not crd:
+                continue
             if crd in seen_crds:
                 continue
 
