@@ -14,6 +14,14 @@ set -euo pipefail
 
 PROJECT="${ATTEST_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${ATTEST_REGION:-us-central1}"
+# Where the MODEL is served, which is not where the SERVICE runs. The 3.x Gemini
+# models resolve only on Vertex's `global` location — every regional endpoint
+# 404s them (verified Aug 18 against us-central1, us-east5, us-west1,
+# europe-west4). Cloud Run, Firestore and Pub/Sub stay in $REGION.
+MODEL_LOCATION="${ATTEST_MODEL_LOCATION:-global}"
+# Keep this the model the premise-test corpus was measured on, or the battery
+# results stop being comparable with premise_test_results_v3.csv.
+MODEL="${ATTEST_MODEL:-gemini-3.5-flash-lite}"
 SERVICE="attest-orchestrator"
 APP="attest_orchestrator"          # must match the folder under agents/
 TOPIC="attest-runs"
@@ -100,7 +108,7 @@ cmd_deploy() {
     --min-instances 0 \
     --max-instances 3 \
     --memory 1Gi \
-    --set-env-vars "GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},ATTEST_MODEL=gemini-2.5-flash-lite"
+    --set-env-vars "GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${MODEL_LOCATION},ATTEST_MODEL=${MODEL}"
 }
 
 service_url() {

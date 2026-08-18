@@ -32,11 +32,17 @@ Three adjustments were needed and are baked into `deploy.sh`:
 - `--trace_to_cloud`/`--otel_to_cloud` lazy-import the OTel GCP exporters at startup and the
   container crashes before the port opens if they're absent — `requirements.txt` carries the
   `google-adk[otel-gcp]` extras.
-- `gemini-3.5-flash-lite` is an AI Studio model and is **not** a Vertex publisher model in
-  `us-central1`. The deployed image runs Vertex (`GOOGLE_GENAI_USE_ENTERPRISE=1`), so
-  `deploy.sh` sets `ATTEST_MODEL=gemini-2.5-flash-lite` for the container; the local default
-  stays `gemini-3.5-flash-lite`. A missing `roles/monitoring.metricWriter` shows up as a
-  repeating `Failed to export metrics batch code: 403` — granted in `cmd_infra` too.
+- The model is served from a different location than the service runs in. `gemini-3.5-flash-lite`
+  404s on every *regional* Vertex endpoint (verified Aug 18 against `us-central1`, `us-east5`,
+  `us-west1`, `europe-west4`) but resolves on Vertex's **`global`** location, which is where the
+  3.x generation is published. So `deploy.sh` sets `GOOGLE_CLOUD_LOCATION=global` for model calls
+  while Cloud Run, Firestore and Pub/Sub stay in `$REGION`; `ATTEST_MODEL` stays
+  `gemini-3.5-flash-lite` on both surfaces. Overridable via `ATTEST_MODEL_LOCATION`.
+  An earlier revision of this file concluded 3.x was AI-Studio-only and pinned the container to
+  `gemini-2.5-flash-lite`; that would have run the battery on a different model generation than
+  the one every premise-test result was measured on.
+- A missing `roles/monitoring.metricWriter` shows up as a repeating
+  `Failed to export metrics batch code: 403` — granted in `cmd_infra` too.
 
 ## Layout
 
@@ -87,9 +93,11 @@ day.
 
 Everything here sits inside Always Free: Cloud Run (2M requests/month), Firestore (1 GiB,
 50k reads/day), Pub/Sub (10 GiB/month), Cloud Scheduler (3 jobs per *billing account* — this
-uses one, so don't casually add more). Locally, model calls run on `gemini-3.5-flash-lite`
-(AI Studio); the deployed image runs `gemini-2.5-flash-lite` on Vertex via `ATTEST_MODEL`
-(see the adjustments above). Keep every high-volume loop on a `-flash-lite` model —
+uses one, so don't casually add more). Model calls run on `gemini-3.5-flash-lite` both
+locally (AI Studio) and deployed (Vertex, `global` location — see the adjustments above), so
+deployed runs stay comparable with the premise-test corpus. Vertex bills per token with no free
+tier; a full battery run is single-digit dollars against the $150 credit. Keep every high-volume
+loop on a `-flash-lite` model —
 `gemini-3.5-flash` is capped at 20 requests/day on free tier and will stall a batch run.
 
 ## Design notes carried forward
