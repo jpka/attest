@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -70,7 +71,31 @@ def list_covered_firms() -> list[dict]:
     ]
 
 
-def append_evidence(payload: str, prev_hash: str = "") -> dict:
+# The chain tail lives in process only until Aug 24-25 swaps `_chain_tail` and
+# `_commit` for a Firestore transaction. It does NOT survive a restart or a second
+# Cloud Run instance, so the chain today is per-instance. What it does establish
+# now is the property that matters: linkage is computed by the archive, never
+# supplied by the caller. The lock makes read-tail-then-commit atomic within the
+# process, which is the same invariant the Firestore transaction will enforce
+# across instances.
+_TAIL_LOCK = threading.Lock()
+_TAIL = ""
+
+
+def _chain_tail() -> str:
+    """The `entry_hash` of the most recent entry, or "" if the chain is empty."""
+    return _TAIL
+
+
+def _commit(entry: dict) -> None:
+    """Persist one entry and advance the tail. Aug 24-25: append-only Firestore
+    write plus a GCS object, in a transaction that rejects a stale tail."""
+    global _TAIL
+    logger.info("evidence.append %s", json.dumps(entry))
+    _TAIL = entry["entry_hash"]
+
+
+def append_evidence(payload: str) -> dict:
     """Append an observation to the evidence chain and return its chain entry.
 
     Every entry is content-hashed and carries the previous entry's hash, so any
@@ -78,29 +103,32 @@ def append_evidence(payload: str, prev_hash: str = "") -> dict:
     204-2's requirement that electronic records be preserved in a way that
     prevents unauthorized alteration or erasure.
 
+    The archive determines where the entry links. You cannot supply, override or
+    reset the previous hash — a chain whose linkage its author controls is not a
+    record.
+
     Args:
         payload: The verbatim observation to record.
-        prev_hash: The `entry_hash` of the previous entry. Empty for the first.
 
     Returns:
         The chain entry. Persist this verbatim; never rewrite it.
     """
-    timestamp = datetime.now(timezone.utc).isoformat()
-    body = json.dumps(
-        {"payload": payload, "prev_hash": prev_hash, "timestamp": timestamp},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    entry_hash = hashlib.sha256(body.encode()).hexdigest()
-    entry = {
-        "entry_hash": entry_hash,
-        "prev_hash": prev_hash,
-        "timestamp": timestamp,
-        "payload_sha256": hashlib.sha256(payload.encode()).hexdigest(),
-        "model_id": MODEL,
-    }
-    # Aug 24-25 replaces this with an append-only Firestore write + GCS object.
-    logger.info("evidence.append %s", json.dumps(entry))
+    with _TAIL_LOCK:
+        prev_hash = _chain_tail()
+        timestamp = datetime.now(timezone.utc).isoformat()
+        body = json.dumps(
+            {"payload": payload, "prev_hash": prev_hash, "timestamp": timestamp},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        entry = {
+            "entry_hash": hashlib.sha256(body.encode()).hexdigest(),
+            "prev_hash": prev_hash,
+            "timestamp": timestamp,
+            "payload_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+            "model_id": MODEL,
+        }
+        _commit(entry)
     return entry
 
 

@@ -56,7 +56,7 @@ pip install google-adk
 python local_test.py
 ```
 
-All six checks should pass. The last one makes a real model call.
+All eight checks should pass. The last one makes a real model call.
 
 ## Then deploy
 
@@ -100,8 +100,20 @@ findings are models confusing exactly these entities.
 
 **`append_evidence` is the shape the Evidence Archive keeps**, not a placeholder to be
 redesigned. Each entry carries `sha256(payload)`, `prev_hash`, timestamp and model id, so any
-retroactive edit is detectable. Aug 24–25 swaps the log line for an append-only Firestore write
-plus a GCS object; the entry structure does not change.
+retroactive edit is detectable. Aug 24–25 swaps `_chain_tail`/`_commit` for an append-only
+Firestore write plus a GCS object; the entry structure does not change.
+
+**The agent cannot supply the linkage.** `append_evidence` takes only a payload; it reads the
+tail itself and computes `prev_hash`. The earlier version accepted `prev_hash` as a tool
+argument, which let the model fork or reset the chain by passing a stale value — undetectable
+downstream, and the exact failure the product exists to prevent. `local_test.py` asserts the
+parameter stays gone. Until Aug 24–25 the tail is in-process, so the chain is per-instance and
+does not survive a restart; the Firestore transaction fixes durability and must also reject a
+stale tail rather than overwrite it.
+
+**Open question for Aug 24–25:** a pure hash chain detects edits but not *truncation* — dropping
+the last N entries leaves a valid chain. A monotonic sequence number in the entry closes that.
+It is one field, and it is cheaper to add before the archive is written than after.
 
 **Memory Bank stays separate from the archive.** Memory Bank is the agent's working memory:
 semantic, mutable. The Evidence Archive is the legal record: append-only, hash-chained, never
