@@ -73,12 +73,18 @@ def months_since(date_str):
 
 
 def classify(row):
-    """Which selection bucket this firm belongs to, or None if it doesn't qualify."""
+    """Which selection bucket this firm belongs to, or None if it doesn't qualify.
+
+    Returns None when the registration date is missing, unparseable or in the
+    future: such a row must not fill any bucket silently.
+    """
     has_disciplinary = adv._yes(row, adv.C_ITEM_11_ANY) or any(
         adv._yes(row, col) for col in adv.DISCIPLINARY_FIELDS
     )
     age = months_since(row[adv.C_SEC_STATUS_DATE])
-    is_recent = age is not None and 0 <= age <= RECENT_REGISTRATION_MONTHS
+    if age is None:
+        return None
+    is_recent = 0 <= age <= RECENT_REGISTRATION_MONTHS
     is_thin_web = row[adv.C_WEBSITE_COUNT].strip() in ('0', '')
 
     if has_disciplinary:
@@ -99,6 +105,7 @@ def run(roster_csv, out):
         'no_crd': 0,
         'aum_out_of_band': 0,
         'form_version': 0,
+        'invalid_status_date': 0,
     }
     selected = {bucket: [] for bucket in BUCKET_QUOTAS}
     seen_crds = set()
@@ -149,6 +156,9 @@ def run(roster_csv, out):
                 continue
 
             bucket = classify(row)
+            if bucket is None:
+                summary['invalid_status_date'] += 1
+                continue
             if len(selected[bucket]) >= BUCKET_QUOTAS[bucket]:
                 continue
 
@@ -190,7 +200,8 @@ def main():
         f"  scanned {summary['scanned']} rows; skipped: "
         f"{summary['short']} short, {summary['no_name']} no-name, "
         f"{summary['no_crd']} no-CRD, {summary['aum_out_of_band']} out-of-AUM-band, "
-        f"{summary['form_version']} wrong form version"
+        f"{summary['form_version']} wrong form version, "
+        f"{summary['invalid_status_date']} invalid status date"
     )
     for firm in firms:
         fees = firm['compensation']

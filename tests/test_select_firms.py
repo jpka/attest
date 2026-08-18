@@ -163,8 +163,26 @@ def test_duplicate_crd_skipped(tmp_path):
 
 def test_future_dated_registration_not_recent():
     future = row(status_date="09/01/2026")
-    assert classify(future) != "recent"
+    assert classify(future) is None
     assert months_since("09/01/2026") is None
+
+
+def test_invalid_status_date_skipped(tmp_path):
+    roster = tmp_path / "roster.csv"
+    out = tmp_path / "out.json"
+    rows = [
+        row(crd="1000006", name="BAD DATE FIRM", status_date="not-a-date"),
+        row(crd="1000001", name="FIRM A"),
+        row(crd="1000002", name="FIRM B"),
+        row(crd="1000003", name="FIRM C", disciplinary=True),
+        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000005", name="FIRM E", website_count="0"),
+    ]
+    write_roster(roster, rows)
+    firms, summary = run(str(roster), str(out))
+    assert summary["invalid_status_date"] == 1
+    assert "1000006" not in [f["crd"] for f in firms]
+    assert len(firms) == 5
 
 
 def test_classify_buckets():

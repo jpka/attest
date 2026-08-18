@@ -32,7 +32,11 @@ python publish_registry.py                                            # content-
 `select_firms.py`'s output is real SEC registrant data, so it must stay out of the repo — its
 `--out` default is the scratch file `selected_firms.json`, which is gitignored. `anonymize.py`
 then replaces each firm's identity fields and writes the committed, fictionalized
-`ground_truth.json`. Republishing unchanged data is a no-op (the version *is* the content), so
+`ground_truth.json`. Note that only the identities are fictionalized, not the quantitative
+record shapes (AUM, client counts, compensation, services, disciplinary item codes) — a reader
+with the public SEC roster could in principle link those values back to a registrant. Keeping
+them real is deliberate: they are exactly what the scorer compares a model's claims against.
+Republishing unchanged data is a no-op (the version *is* the content), so
 `publish_registry.py` is safe to re-run whenever `ground_truth.json` changes.
 
 ## Reproducing the committed roster

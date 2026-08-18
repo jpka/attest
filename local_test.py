@@ -70,6 +70,11 @@ def main() -> int:
         return 1
 
     check("battery registry reachable", True, f"roster {version}")
+    if firm.get("error"):
+        # Stale publish (Firestore still points at a pre-anonymization roster):
+        # fail now rather than spend tokens on the live model call below.
+        check("ground truth by CRD", False, f"CRD 900003 absent from roster {version}")
+        return 1
     check(
         "ground truth by CRD",
         firm.get("disciplinary", {}).get("any_disclosure") is True,

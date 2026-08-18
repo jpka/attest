@@ -142,6 +142,12 @@ from real SEC registrants, so the scorer still tests realistic records. `select_
 output never enters the repo (gitignored). That is what lets this repository go public on
 Aug 28 without naming a real firm.
 
+Residual re-identification risk is acknowledged: the quantitative values are real Form ADV
+figures, and a reader with the public SEC bulk roster could in principle link them back to
+the originating registrant. Identities are fictionalized, not the values — the values are what
+the scorer compares a model's claims against, and the submission's findings were measured on
+these exact record shapes. The public repo never names a real firm.
+
 ## Design notes carried forward
 
 **Ground truth is keyed by CRD, never by name.** The SEC roster contains distinct firms sharing
