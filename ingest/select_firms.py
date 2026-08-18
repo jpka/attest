@@ -59,6 +59,8 @@ def months_since(date_str):
         registered = datetime.strptime(date_str.strip(), '%m/%d/%Y')
     except (AttributeError, ValueError):
         return None
+    if registered > REFERENCE_DATE:
+        return None
     return ((REFERENCE_DATE.year - registered.year) * 12
             + REFERENCE_DATE.month - registered.month)
 
@@ -95,7 +97,9 @@ def main():
         try:
             header = next(reader)
         except StopIteration:
-            raise SystemExit("roster is empty; expected the pinned 2026-08-11 header")
+            raise SystemExit(
+                "roster is empty; expected the pinned 2026-08-11 header"
+            ) from None
         if header != list(adv.EXPECTED_HEADERS):
             mismatch = next(
                 ((i, got, want) for i, (got, want)
