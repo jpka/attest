@@ -1,0 +1,798 @@
+[
+  {
+    "crd": "900001",
+    "name": "NORTHBRIDGE CAPITAL ADVISORS, LLC",
+    "legal_name": "NORTHBRIDGE CAPITAL ADVISORS, LLC",
+    "sec_number": "801-900001",
+    "city": "AUSTIN",
+    "state": "TX",
+    "country": "United States",
+    "website": "HTTPS://WWW.NORTHBRIDGEADVISORS.EXAMPLE",
+    "sec_registration_status": "Approved",
+    "sec_status_effective_date": "08/22/2000",
+    "latest_adv_filing_date": "06/26/2026",
+    "selection_bucket": "clean",
+    "aum": {
+      "provides_continuous_supervisory_services": true,
+      "discretionary_usd": 628902725.0,
+      "non_discretionary_usd": 1763081.0,
+      "total_usd": 630665806.0,
+      "discretionary_accounts": 1548,
+      "non_discretionary_accounts": 6,
+      "total_accounts": 1554,
+      "non_us_client_aum_usd": 1217154.0
+    },
+    "employees": {
+      "total_excluding_clerical": 32,
+      "performing_advisory_functions": 32,
+      "registered_reps_of_broker_dealer": 32,
+      "investment_adviser_reps": 30,
+      "adviser_reps_for_another_adviser": 3,
+      "licensed_insurance_agents": 19,
+      "solicitors": 1
+    },
+    "clients": {
+      "clients_without_regulatory_aum": 18,
+      "percent_non_us_persons": 0,
+      "by_type": {
+        "individuals_non_hnw": {
+          "adv_item": "Individuals (other than high net worth individuals)",
+          "number_of_clients": 548,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 163209871.0
+        },
+        "high_net_worth_individuals": {
+          "adv_item": "High net worth individuals",
+          "number_of_clients": 211,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 434165916.0
+        },
+        "pension_and_profit_sharing": {
+          "adv_item": "Pension and profit sharing plans",
+          "number_of_clients": null,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 25311746.0
+        },
+        "charitable_organizations": {
+          "adv_item": "Charitable organizations",
+          "number_of_clients": null,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 2958291.0
+        },
+        "corporations_or_other_businesses": {
+          "adv_item": "Corporations or other businesses not listed above",
+          "number_of_clients": 7,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 4902762.0
+        },
+        "other": {
+          "adv_item": "Other",
+          "number_of_clients": null,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 117220.0
+        }
+      }
+    },
+    "compensation": {
+      "adv_item": "Form ADV Part 1A Item 5.E - how the firm is compensated for advisory services",
+      "percentage_of_aum": {
+        "value": true,
+        "adv_item": "A percentage of assets under your management"
+      },
+      "hourly_charges": {
+        "value": true,
+        "adv_item": "Hourly charges"
+      },
+      "subscription_fees": {
+        "value": false,
+        "adv_item": "Subscription fees (for a newsletter or periodical)"
+      },
+      "fixed_fees": {
+        "value": true,
+        "adv_item": "Fixed fees (other than subscription fees)"
+      },
+      "commissions": {
+        "value": true,
+        "adv_item": "Commissions"
+      },
+      "performance_based_fees": {
+        "value": false,
+        "adv_item": "Performance-based fees"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "receives_commissions": true,
+      "is_fee_only": false
+    },
+    "services": {
+      "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
+      "financial_planning": {
+        "value": true,
+        "adv_item": "Financial planning services"
+      },
+      "portfolio_mgmt_individuals_small_biz": {
+        "value": true,
+        "adv_item": "Portfolio management for individuals and/or small businesses"
+      },
+      "portfolio_mgmt_investment_companies": {
+        "value": false,
+        "adv_item": "Portfolio management for investment companies"
+      },
+      "portfolio_mgmt_pooled_vehicles": {
+        "value": false,
+        "adv_item": "Portfolio management for pooled investment vehicles"
+      },
+      "portfolio_mgmt_businesses_institutions": {
+        "value": true,
+        "adv_item": "Portfolio management for businesses or institutional clients"
+      },
+      "pension_consulting": {
+        "value": false,
+        "adv_item": "Pension consulting services"
+      },
+      "selection_of_other_advisers": {
+        "value": true,
+        "adv_item": "Selection of other advisers (including private fund managers)"
+      },
+      "publication_of_periodicals": {
+        "value": false,
+        "adv_item": "Publication of periodicals or newsletters"
+      },
+      "security_ratings_or_pricing": {
+        "value": false,
+        "adv_item": "Security ratings or pricing services"
+      },
+      "market_timing": {
+        "value": false,
+        "adv_item": "Market timing services"
+      },
+      "educational_seminars": {
+        "value": false,
+        "adv_item": "Educational seminars/workshops"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "financial_planning_client_count_band": "0",
+      "financial_planning_client_count_if_more_than_500": null,
+      "participates_in_wrap_fee_program": false
+    },
+    "disciplinary": {
+      "adv_item": "Form ADV Part 1A Item 11 - disciplinary history of the firm and its advisory affiliates",
+      "any_disclosure": false,
+      "items": []
+    }
+  },
+  {
+    "crd": "900002",
+    "name": "HARBOR & ROWE INVESTMENT COUNSEL",
+    "legal_name": "HARBOR & ROWE INVESTMENT COUNSEL",
+    "sec_number": "801-900002",
+    "city": "PORTLAND",
+    "state": "ME",
+    "country": "United States",
+    "website": "HTTP://WWW.HARBORROWE.EXAMPLE",
+    "sec_registration_status": "Approved",
+    "sec_status_effective_date": "11/04/1999",
+    "latest_adv_filing_date": "05/11/2026",
+    "selection_bucket": "clean",
+    "aum": {
+      "provides_continuous_supervisory_services": true,
+      "discretionary_usd": 0.0,
+      "non_discretionary_usd": 894217482.0,
+      "total_usd": 894217482.0,
+      "discretionary_accounts": 0,
+      "non_discretionary_accounts": 2100,
+      "total_accounts": 2100,
+      "non_us_client_aum_usd": 0.0
+    },
+    "employees": {
+      "total_excluding_clerical": 55,
+      "performing_advisory_functions": 33,
+      "registered_reps_of_broker_dealer": 37,
+      "investment_adviser_reps": 33,
+      "adviser_reps_for_another_adviser": 5,
+      "licensed_insurance_agents": 37,
+      "solicitors": 0
+    },
+    "clients": {
+      "clients_without_regulatory_aum": 2100,
+      "percent_non_us_persons": 0,
+      "by_type": {
+        "individuals_non_hnw": {
+          "adv_item": "Individuals (other than high net worth individuals)",
+          "number_of_clients": 1891,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 425852641.0
+        },
+        "high_net_worth_individuals": {
+          "adv_item": "High net worth individuals",
+          "number_of_clients": 169,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 326509792.0
+        },
+        "pension_and_profit_sharing": {
+          "adv_item": "Pension and profit sharing plans",
+          "number_of_clients": 65,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": null
+        },
+        "other_investment_advisers": {
+          "adv_item": "Other investment advisers",
+          "number_of_clients": 56,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 141855049.0
+        }
+      }
+    },
+    "compensation": {
+      "adv_item": "Form ADV Part 1A Item 5.E - how the firm is compensated for advisory services",
+      "percentage_of_aum": {
+        "value": true,
+        "adv_item": "A percentage of assets under your management"
+      },
+      "hourly_charges": {
+        "value": false,
+        "adv_item": "Hourly charges"
+      },
+      "subscription_fees": {
+        "value": false,
+        "adv_item": "Subscription fees (for a newsletter or periodical)"
+      },
+      "fixed_fees": {
+        "value": true,
+        "adv_item": "Fixed fees (other than subscription fees)"
+      },
+      "commissions": {
+        "value": true,
+        "adv_item": "Commissions"
+      },
+      "performance_based_fees": {
+        "value": false,
+        "adv_item": "Performance-based fees"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "receives_commissions": true,
+      "is_fee_only": false
+    },
+    "services": {
+      "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
+      "financial_planning": {
+        "value": true,
+        "adv_item": "Financial planning services"
+      },
+      "portfolio_mgmt_individuals_small_biz": {
+        "value": true,
+        "adv_item": "Portfolio management for individuals and/or small businesses"
+      },
+      "portfolio_mgmt_investment_companies": {
+        "value": false,
+        "adv_item": "Portfolio management for investment companies"
+      },
+      "portfolio_mgmt_pooled_vehicles": {
+        "value": false,
+        "adv_item": "Portfolio management for pooled investment vehicles"
+      },
+      "portfolio_mgmt_businesses_institutions": {
+        "value": true,
+        "adv_item": "Portfolio management for businesses or institutional clients"
+      },
+      "pension_consulting": {
+        "value": false,
+        "adv_item": "Pension consulting services"
+      },
+      "selection_of_other_advisers": {
+        "value": true,
+        "adv_item": "Selection of other advisers (including private fund managers)"
+      },
+      "publication_of_periodicals": {
+        "value": false,
+        "adv_item": "Publication of periodicals or newsletters"
+      },
+      "security_ratings_or_pricing": {
+        "value": false,
+        "adv_item": "Security ratings or pricing services"
+      },
+      "market_timing": {
+        "value": false,
+        "adv_item": "Market timing services"
+      },
+      "educational_seminars": {
+        "value": false,
+        "adv_item": "Educational seminars/workshops"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "financial_planning_client_count_band": "1-10",
+      "financial_planning_client_count_if_more_than_500": null,
+      "participates_in_wrap_fee_program": true
+    },
+    "disciplinary": {
+      "adv_item": "Form ADV Part 1A Item 11 - disciplinary history of the firm and its advisory affiliates",
+      "any_disclosure": false,
+      "items": []
+    }
+  },
+  {
+    "crd": "900003",
+    "name": "SENTINEL WEALTH MANAGEMENT PARTNERS, INC.",
+    "legal_name": "SENTINEL WEALTH MANAGEMENT PARTNERS, INC.",
+    "sec_number": "801-900003",
+    "city": "RALEIGH",
+    "state": "NC",
+    "country": "United States",
+    "website": "HTTPS://WWW.SENTINELWM.EXAMPLE",
+    "sec_registration_status": "Approved",
+    "sec_status_effective_date": "04/24/2007",
+    "latest_adv_filing_date": "03/27/2026",
+    "selection_bucket": "disciplinary",
+    "aum": {
+      "provides_continuous_supervisory_services": true,
+      "discretionary_usd": 33635241.0,
+      "non_discretionary_usd": 763716629.0,
+      "total_usd": 797351870.0,
+      "discretionary_accounts": 93,
+      "non_discretionary_accounts": 169,
+      "total_accounts": 262,
+      "non_us_client_aum_usd": 0.0
+    },
+    "employees": {
+      "total_excluding_clerical": 44,
+      "performing_advisory_functions": 22,
+      "registered_reps_of_broker_dealer": 31,
+      "investment_adviser_reps": 22,
+      "adviser_reps_for_another_adviser": 0,
+      "licensed_insurance_agents": 12,
+      "solicitors": 0
+    },
+    "clients": {
+      "clients_without_regulatory_aum": 262,
+      "percent_non_us_persons": 0,
+      "by_type": {
+        "individuals_non_hnw": {
+          "adv_item": "Individuals (other than high net worth individuals)",
+          "number_of_clients": 215,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 71449554.0
+        },
+        "high_net_worth_individuals": {
+          "adv_item": "High net worth individuals",
+          "number_of_clients": 42,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 717922040.0
+        },
+        "charitable_organizations": {
+          "adv_item": "Charitable organizations",
+          "number_of_clients": 4,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 7658640.0
+        },
+        "other": {
+          "adv_item": "Other",
+          "number_of_clients": 1,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 321636.0
+        }
+      }
+    },
+    "compensation": {
+      "adv_item": "Form ADV Part 1A Item 5.E - how the firm is compensated for advisory services",
+      "percentage_of_aum": {
+        "value": true,
+        "adv_item": "A percentage of assets under your management"
+      },
+      "hourly_charges": {
+        "value": false,
+        "adv_item": "Hourly charges"
+      },
+      "subscription_fees": {
+        "value": false,
+        "adv_item": "Subscription fees (for a newsletter or periodical)"
+      },
+      "fixed_fees": {
+        "value": false,
+        "adv_item": "Fixed fees (other than subscription fees)"
+      },
+      "commissions": {
+        "value": false,
+        "adv_item": "Commissions"
+      },
+      "performance_based_fees": {
+        "value": false,
+        "adv_item": "Performance-based fees"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "receives_commissions": false,
+      "is_fee_only": true
+    },
+    "services": {
+      "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
+      "financial_planning": {
+        "value": false,
+        "adv_item": "Financial planning services"
+      },
+      "portfolio_mgmt_individuals_small_biz": {
+        "value": true,
+        "adv_item": "Portfolio management for individuals and/or small businesses"
+      },
+      "portfolio_mgmt_investment_companies": {
+        "value": false,
+        "adv_item": "Portfolio management for investment companies"
+      },
+      "portfolio_mgmt_pooled_vehicles": {
+        "value": false,
+        "adv_item": "Portfolio management for pooled investment vehicles"
+      },
+      "portfolio_mgmt_businesses_institutions": {
+        "value": true,
+        "adv_item": "Portfolio management for businesses or institutional clients"
+      },
+      "pension_consulting": {
+        "value": false,
+        "adv_item": "Pension consulting services"
+      },
+      "selection_of_other_advisers": {
+        "value": true,
+        "adv_item": "Selection of other advisers (including private fund managers)"
+      },
+      "publication_of_periodicals": {
+        "value": false,
+        "adv_item": "Publication of periodicals or newsletters"
+      },
+      "security_ratings_or_pricing": {
+        "value": false,
+        "adv_item": "Security ratings or pricing services"
+      },
+      "market_timing": {
+        "value": false,
+        "adv_item": "Market timing services"
+      },
+      "educational_seminars": {
+        "value": false,
+        "adv_item": "Educational seminars/workshops"
+      },
+      "other": {
+        "value": true,
+        "adv_item": "Other"
+      },
+      "other_description": "RECOMMEND WRAP FEE MANAGEMENT PROGRAMS OF OTHER REGISTERED INVESTMENT ADVISERS",
+      "financial_planning_client_count_band": "",
+      "financial_planning_client_count_if_more_than_500": null,
+      "participates_in_wrap_fee_program": true
+    },
+    "disciplinary": {
+      "adv_item": "Form ADV Part 1A Item 11 - disciplinary history of the firm and its advisory affiliates",
+      "any_disclosure": true,
+      "items": [
+        {
+          "item": "11C(2)",
+          "description": "SEC or CFTC found involvement in a violation of SEC or CFTC regulations or statutes"
+        },
+        {
+          "item": "11C(4)",
+          "description": "SEC or CFTC entered an order in connection with investment-related activity"
+        },
+        {
+          "item": "11C(5)",
+          "description": "SEC or CFTC imposed a civil money penalty or a cease-and-desist order"
+        },
+        {
+          "item": "11E(2)",
+          "description": "A self-regulatory organization found involvement in a violation of its rules"
+        }
+      ]
+    }
+  },
+  {
+    "crd": "900004",
+    "name": "ASPEN CREEK ADVISORY GROUP",
+    "legal_name": "ASPEN CREEK ADVISORY GROUP",
+    "sec_number": "801-900004",
+    "city": "BOULDER",
+    "state": "CO",
+    "country": "United States",
+    "website": "HTTPS://WWW.ASPENCREEKADVISORY.EXAMPLE",
+    "sec_registration_status": "Approved",
+    "sec_status_effective_date": "04/28/2025",
+    "latest_adv_filing_date": "03/15/2026",
+    "selection_bucket": "recent",
+    "aum": {
+      "provides_continuous_supervisory_services": true,
+      "discretionary_usd": 298559076.0,
+      "non_discretionary_usd": 5537364.0,
+      "total_usd": 304096440.0,
+      "discretionary_accounts": 686,
+      "non_discretionary_accounts": 6,
+      "total_accounts": 692,
+      "non_us_client_aum_usd": 0.0
+    },
+    "employees": {
+      "total_excluding_clerical": 2,
+      "performing_advisory_functions": 2,
+      "registered_reps_of_broker_dealer": 0,
+      "investment_adviser_reps": 2,
+      "adviser_reps_for_another_adviser": 0,
+      "licensed_insurance_agents": 0,
+      "solicitors": 0
+    },
+    "clients": {
+      "clients_without_regulatory_aum": 5,
+      "percent_non_us_persons": 0,
+      "by_type": {
+        "individuals_non_hnw": {
+          "adv_item": "Individuals (other than high net worth individuals)",
+          "number_of_clients": 80,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 43903752.0
+        },
+        "high_net_worth_individuals": {
+          "adv_item": "High net worth individuals",
+          "number_of_clients": 83,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 254624549.0
+        },
+        "pension_and_profit_sharing": {
+          "adv_item": "Pension and profit sharing plans",
+          "number_of_clients": null,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 3846601.0
+        },
+        "charitable_organizations": {
+          "adv_item": "Charitable organizations",
+          "number_of_clients": 0,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 1721538.0
+        }
+      }
+    },
+    "compensation": {
+      "adv_item": "Form ADV Part 1A Item 5.E - how the firm is compensated for advisory services",
+      "percentage_of_aum": {
+        "value": true,
+        "adv_item": "A percentage of assets under your management"
+      },
+      "hourly_charges": {
+        "value": true,
+        "adv_item": "Hourly charges"
+      },
+      "subscription_fees": {
+        "value": false,
+        "adv_item": "Subscription fees (for a newsletter or periodical)"
+      },
+      "fixed_fees": {
+        "value": false,
+        "adv_item": "Fixed fees (other than subscription fees)"
+      },
+      "commissions": {
+        "value": false,
+        "adv_item": "Commissions"
+      },
+      "performance_based_fees": {
+        "value": false,
+        "adv_item": "Performance-based fees"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "receives_commissions": false,
+      "is_fee_only": true
+    },
+    "services": {
+      "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
+      "financial_planning": {
+        "value": true,
+        "adv_item": "Financial planning services"
+      },
+      "portfolio_mgmt_individuals_small_biz": {
+        "value": true,
+        "adv_item": "Portfolio management for individuals and/or small businesses"
+      },
+      "portfolio_mgmt_investment_companies": {
+        "value": false,
+        "adv_item": "Portfolio management for investment companies"
+      },
+      "portfolio_mgmt_pooled_vehicles": {
+        "value": false,
+        "adv_item": "Portfolio management for pooled investment vehicles"
+      },
+      "portfolio_mgmt_businesses_institutions": {
+        "value": false,
+        "adv_item": "Portfolio management for businesses or institutional clients"
+      },
+      "pension_consulting": {
+        "value": false,
+        "adv_item": "Pension consulting services"
+      },
+      "selection_of_other_advisers": {
+        "value": false,
+        "adv_item": "Selection of other advisers (including private fund managers)"
+      },
+      "publication_of_periodicals": {
+        "value": false,
+        "adv_item": "Publication of periodicals or newsletters"
+      },
+      "security_ratings_or_pricing": {
+        "value": false,
+        "adv_item": "Security ratings or pricing services"
+      },
+      "market_timing": {
+        "value": false,
+        "adv_item": "Market timing services"
+      },
+      "educational_seminars": {
+        "value": false,
+        "adv_item": "Educational seminars/workshops"
+      },
+      "other": {
+        "value": true,
+        "adv_item": "Other"
+      },
+      "other_description": "EMPLOYER SPONSORED RETIREMENT PLANS ADVISORY SERVICES",
+      "financial_planning_client_count_band": "1-10",
+      "financial_planning_client_count_if_more_than_500": null,
+      "participates_in_wrap_fee_program": false
+    },
+    "disciplinary": {
+      "adv_item": "Form ADV Part 1A Item 11 - disciplinary history of the firm and its advisory affiliates",
+      "any_disclosure": false,
+      "items": []
+    }
+  },
+  {
+    "crd": "900005",
+    "name": "CLAREMONT CAPITAL ADVISORS",
+    "legal_name": "CLAREMONT CAPITAL ADVISORS",
+    "sec_number": "801-900005",
+    "city": "NASHVILLE",
+    "state": "TN",
+    "country": "United States",
+    "website": "",
+    "sec_registration_status": "Approved",
+    "sec_status_effective_date": "08/04/1977",
+    "latest_adv_filing_date": "02/20/2026",
+    "selection_bucket": "thin_web",
+    "aum": {
+      "provides_continuous_supervisory_services": true,
+      "discretionary_usd": 888208444.0,
+      "non_discretionary_usd": 0.0,
+      "total_usd": 888208444.0,
+      "discretionary_accounts": 1,
+      "non_discretionary_accounts": 0,
+      "total_accounts": 1,
+      "non_us_client_aum_usd": 0.0
+    },
+    "employees": {
+      "total_excluding_clerical": 12,
+      "performing_advisory_functions": 4,
+      "registered_reps_of_broker_dealer": 8,
+      "investment_adviser_reps": 0,
+      "adviser_reps_for_another_adviser": 0,
+      "licensed_insurance_agents": 0,
+      "solicitors": 0
+    },
+    "clients": {
+      "clients_without_regulatory_aum": 1,
+      "percent_non_us_persons": 0,
+      "by_type": {
+        "investment_companies": {
+          "adv_item": "Investment companies",
+          "number_of_clients": 1,
+          "fewer_than_5_clients": false,
+          "regulatory_aum_usd": 888208444.0
+        }
+      }
+    },
+    "compensation": {
+      "adv_item": "Form ADV Part 1A Item 5.E - how the firm is compensated for advisory services",
+      "percentage_of_aum": {
+        "value": true,
+        "adv_item": "A percentage of assets under your management"
+      },
+      "hourly_charges": {
+        "value": false,
+        "adv_item": "Hourly charges"
+      },
+      "subscription_fees": {
+        "value": false,
+        "adv_item": "Subscription fees (for a newsletter or periodical)"
+      },
+      "fixed_fees": {
+        "value": false,
+        "adv_item": "Fixed fees (other than subscription fees)"
+      },
+      "commissions": {
+        "value": false,
+        "adv_item": "Commissions"
+      },
+      "performance_based_fees": {
+        "value": false,
+        "adv_item": "Performance-based fees"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "receives_commissions": false,
+      "is_fee_only": true
+    },
+    "services": {
+      "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
+      "financial_planning": {
+        "value": false,
+        "adv_item": "Financial planning services"
+      },
+      "portfolio_mgmt_individuals_small_biz": {
+        "value": false,
+        "adv_item": "Portfolio management for individuals and/or small businesses"
+      },
+      "portfolio_mgmt_investment_companies": {
+        "value": true,
+        "adv_item": "Portfolio management for investment companies"
+      },
+      "portfolio_mgmt_pooled_vehicles": {
+        "value": false,
+        "adv_item": "Portfolio management for pooled investment vehicles"
+      },
+      "portfolio_mgmt_businesses_institutions": {
+        "value": false,
+        "adv_item": "Portfolio management for businesses or institutional clients"
+      },
+      "pension_consulting": {
+        "value": false,
+        "adv_item": "Pension consulting services"
+      },
+      "selection_of_other_advisers": {
+        "value": false,
+        "adv_item": "Selection of other advisers (including private fund managers)"
+      },
+      "publication_of_periodicals": {
+        "value": false,
+        "adv_item": "Publication of periodicals or newsletters"
+      },
+      "security_ratings_or_pricing": {
+        "value": false,
+        "adv_item": "Security ratings or pricing services"
+      },
+      "market_timing": {
+        "value": false,
+        "adv_item": "Market timing services"
+      },
+      "educational_seminars": {
+        "value": false,
+        "adv_item": "Educational seminars/workshops"
+      },
+      "other": {
+        "value": false,
+        "adv_item": "Other"
+      },
+      "other_description": "",
+      "financial_planning_client_count_band": "",
+      "financial_planning_client_count_if_more_than_500": null,
+      "participates_in_wrap_fee_program": false
+    },
+    "disciplinary": {
+      "adv_item": "Form ADV Part 1A Item 11 - disciplinary history of the firm and its advisory affiliates",
+      "any_disclosure": false,
+      "items": []
+    }
+  }
+]

@@ -1,0 +1,11 @@
+# Additional deps for the agent. google-adk itself is installed by the
+# generated Dockerfile at the pinned --adk_version, so do not list it here.
+# ADK's --trace_to_cloud / --otel_to_cloud lazy-import these at startup;
+# without them the container exits before the port opens. Equivalent to the
+# google-adk[otel-gcp] extras.
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-gcp-logging
+opentelemetry-exporter-gcp-trace
+opentelemetry-exporter-gcp-monitoring
+opentelemetry-resourcedetector-gcp
+opentelemetry-instrumentation-google-genai
