@@ -20,6 +20,6 @@ jobs:
       - name: Install
         run: pip install pytest ruff
       - name: Ruff
-        run: ruff check ingest tests
+        run: ruff check ingest tests local_test.py conftest.py
       - name: Pytest
         run: pytest -q

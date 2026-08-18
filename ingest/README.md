@@ -4,7 +4,7 @@ The Battery Registry's roster is generated, not hand-assembled. These two script
 SEC's Form ADV Part 1A bulk export into `agents/attest_orchestrator/ground_truth.json`, the
 reviewable source `publish_registry.py` content-hashes into Firestore.
 
-```
+```text
 SEC bulk roster CSV ──> select_firms.py ──> real selection ──> anonymize.py ──> ground_truth.json ──> publish_registry.py ──> Firestore
                           │
                           └── adv_schema.py (column map, Item labels transcribed from the form)
