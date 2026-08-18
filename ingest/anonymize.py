@@ -17,6 +17,7 @@ import copy
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 DEFAULT_OUT = (
@@ -63,18 +64,22 @@ _NON_ALNUM = re.compile(r'[^0-9a-z]+')
 
 
 def _canonical(value):
-    """Lowercase and strip every separator, so "REAL FIRM, 0" matches
-    "REAL FIRM 0" and "REAL-FIRM-0" when looking for identity leaks."""
-    return _NON_ALNUM.sub('', value.casefold())
+    """Lowercase, strip accents, and strip every separator, so "REAL FIRM, 0"
+    matches "REAL FIRM 0", "REAL-FIRM-0", and "RÉAL FIRM 0" when looking for
+    identity leaks."""
+    decomposed = unicodedata.normalize('NFKD', value)
+    unaccented = ''.join(c for c in decomposed if not unicodedata.combining(c))
+    return _NON_ALNUM.sub('', unaccented.casefold())
 
 
 def _identity_leak(firm, text):
     folded = _canonical(text)
     for field in IDENTITY_FIELDS:
         value = firm.get(field)
-        if (isinstance(value, str) and len(value.strip()) >= 4
-                and _canonical(value) in folded):
-            return field, value
+        if isinstance(value, str) and len(value.strip()) >= 4:
+            canonical_value = _canonical(value)
+            if canonical_value and canonical_value in folded:
+                return field, value
     return None
 
 

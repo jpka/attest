@@ -80,3 +80,13 @@ def test_identity_leak_across_punctuation_variants():
     }
     with pytest.raises(SystemExit):
         anonymize(firms)
+
+
+def test_identity_leak_across_accent_variants():
+    firms = _make_firms(len(FICTIONAL))
+    firms[0]["name"] = "RÉAL FIRM 0"
+    firms[0]["services"] = {
+        "other_description": "REAL FIRM 0 CUSTODIAL SERVICES",
+    }
+    with pytest.raises(SystemExit):
+        anonymize(firms)
