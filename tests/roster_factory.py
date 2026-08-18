@@ -19,7 +19,8 @@ def future_date():
 
 
 def row(crd="1000001", name="TEST FIRM", aum="500000000", status_date="01/01/2010",
-        form_version="10/2021", website_count="1", disciplinary=False, **fields):
+        form_version="10/2021", website_count="1", disciplinary=False,
+        status="Approved", **fields):
     cells = [""] * len(adv.EXPECTED_HEADERS)
     cells[adv.C_CRD] = crd
     cells[adv.C_PRIMARY_NAME] = name
@@ -27,6 +28,7 @@ def row(crd="1000001", name="TEST FIRM", aum="500000000", status_date="01/01/201
     cells[adv.C_SEC_STATUS_DATE] = status_date
     cells[adv.C_FORM_VERSION] = form_version
     cells[adv.C_WEBSITE_COUNT] = website_count
+    cells[adv.C_SEC_STATUS] = status
     if disciplinary:
         cells[adv.C_ITEM_11_ANY] = "Y"
     for col, value in fields.items():

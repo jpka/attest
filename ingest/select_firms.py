@@ -41,6 +41,11 @@ except ImportError:  # running as a script: python ingest/select_firms.py
 AUM_MIN = 250_000_000
 AUM_MAX = 2_000_000_000
 
+# Registration statuses that mean "actively registered". The FOIA roster only
+# contains Approved and 120-Day Approval rows today, but a stale or wider
+# export could carry blank or terminated statuses; those must not fill a bucket.
+ACTIVE_STATUSES = frozenset(('Approved', '120-Day Approval'))
+
 REFERENCE_DATE = datetime(2026, 8, 11)
 RECENT_REGISTRATION_MONTHS = 18
 
@@ -105,6 +110,7 @@ def run(roster_csv, out):
         'no_crd': 0,
         'aum_out_of_band': 0,
         'form_version': 0,
+        'inactive_status': 0,
         'invalid_status_date': 0,
     }
     selected = {bucket: [] for bucket in BUCKET_QUOTAS}
@@ -143,6 +149,9 @@ def run(roster_csv, out):
                 continue
             if row[adv.C_FORM_VERSION].strip() != adv.EXPECTED_FORM_VERSION:
                 summary['form_version'] += 1
+                continue
+            if row[adv.C_SEC_STATUS].strip() not in ACTIVE_STATUSES:
+                summary['inactive_status'] += 1
                 continue
             if not AUM_MIN <= parse_aum(row[adv.C_5F_TOTAL_AUM]) <= AUM_MAX:
                 summary['aum_out_of_band'] += 1
@@ -201,6 +210,7 @@ def main():
         f"{summary['short']} short, {summary['no_name']} no-name, "
         f"{summary['no_crd']} no-CRD, {summary['aum_out_of_band']} out-of-AUM-band, "
         f"{summary['form_version']} wrong form version, "
+        f"{summary['inactive_status']} inactive status, "
         f"{summary['invalid_status_date']} invalid status date"
     )
     for firm in firms:

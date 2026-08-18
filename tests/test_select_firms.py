@@ -126,6 +126,26 @@ def test_wrong_form_version_skipped(tmp_path):
     assert "1000006" not in [f["crd"] for f in firms]
 
 
+def test_inactive_status_skipped(tmp_path):
+    roster = tmp_path / "roster.csv"
+    out = tmp_path / "out.json"
+    rows = [
+        row(crd="1000006", name="TERMINATED FIRM", status="Terminated"),
+        row(crd="1000007", name="BLANK STATUS FIRM", status=""),
+        row(crd="1000001", name="FIRM A"),
+        row(crd="1000002", name="FIRM B"),
+        row(crd="1000003", name="FIRM C", disciplinary=True),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
+        row(crd="1000005", name="FIRM E", website_count="0"),
+    ]
+    write_roster(roster, rows)
+    firms, summary = run(str(roster), str(out))
+    assert summary["inactive_status"] == 2
+    assert "1000006" not in [f["crd"] for f in firms]
+    assert "1000007" not in [f["crd"] for f in firms]
+    assert len(firms) == 5
+
+
 def test_aum_out_of_band_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
