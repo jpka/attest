@@ -19,8 +19,15 @@ C_POSTAL = 17
 C_SEC_STATUS = 29
 C_SEC_STATUS_DATE = 30
 C_LATEST_FILING = 32
+C_FORM_VERSION = 33
 C_WEBSITE = 35
 C_WEBSITE_COUNT = 36
+
+# Form ADV Part 1A revision this roster is transcribed from. Older Form Version
+# filings carry the legacy 5.D(a)(1-3)... layout in different columns, so
+# `CLIENT_TYPES` would read an empty `by_type` for them; rows of any other
+# version are skipped by `select_firms.py`.
+EXPECTED_FORM_VERSION = "10/2021"
 
 # --- Item 5.A / 5.B: employees --------------------------------------------
 C_5A_EMPLOYEES = 73
@@ -133,8 +140,6 @@ DISCIPLINARY_FIELDS = {
     439: ('11H(1)(c)', "A court dismissed an investment-related civil action pursuant to a settlement agreement"),
     441: ('11H(2)', "Currently named in a pending investment-related civil action"),
 }
-
-MIN_COLUMNS = 443
 
 # Pinned header for the FOIA bulk roster, transcribed from the 2026-08-11 release's
 # own header row (the SEC export, not this repo's `headers.json`; the two agree).
@@ -254,6 +259,8 @@ EXPECTED_HEADERS = (
     'Count of 11H(1)(c) disclosures', '11H(2)', 'Count of 11H(2) disclosures', '12A',
     '12B(1)', '12B(2)', '12C(1)', '12C(2)',
 )
+
+MIN_COLUMNS = len(EXPECTED_HEADERS)
 
 
 def _text(row, idx):

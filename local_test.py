@@ -58,7 +58,7 @@ def main() -> int:
         from attest_orchestrator import registry  # noqa: E402
 
         version = registry.roster_version()
-        firm = get_adv_ground_truth("900001")
+        firm = get_adv_ground_truth("900003")
     except Exception as exc:  # noqa: BLE001
         check("battery registry reachable", False, f"{type(exc).__name__}: {exc}")
         print(
@@ -105,7 +105,7 @@ def main() -> int:
 
     envelope = {
         "message": {
-            "data": base64.b64encode(json.dumps({"crd": "900001"}).encode()).decode(),
+            "data": base64.b64encode(json.dumps({"crd": "900003"}).encode()).decode(),
             "attributes": {"battery_version": "4ea67a1f35e1"},
             "messageId": "local-1",
         },
