@@ -1,13 +1,15 @@
 """Run the whole path locally before spending a Cloud Build minute on it.
 
-    pip install google-adk
+    pip install google-adk google-cloud-firestore
     export GOOGLE_API_KEY=<your AI Studio key>
+    gcloud auth application-default login    # ground truth now lives in Firestore
     python local_test.py
 
 Exercises, in order:
   1. agent + tool loading
-  2. the Pub/Sub trigger route, with a real push envelope
-  3. one live model call
+  2. the Battery Registry read out of Firestore
+  3. the Pub/Sub trigger route, with a real push envelope
+  4. one live model call
 
 If this passes, a Cloud Run failure is an infrastructure problem, not an agent
 problem — which is the whole point of running it.
@@ -48,7 +50,26 @@ def main() -> int:
     check("agent loads", root_agent.name == "attest_orchestrator", root_agent.model)
     check("tools attached", len(root_agent.tools) == 3)
 
-    firm = get_adv_ground_truth("900001")
+    # Ground truth is a Firestore read now, so this is also the registry test.
+    # A missing roster or missing credentials must fail loudly here rather than
+    # degrade to some other roster — a run scored against ground truth nobody
+    # chose is the failure this whole product exists to prevent.
+    try:
+        from attest_orchestrator import registry  # noqa: E402
+
+        version = registry.roster_version()
+        firm = get_adv_ground_truth("900001")
+    except Exception as exc:  # noqa: BLE001
+        check("battery registry reachable", False, f"{type(exc).__name__}: {exc}")
+        print(
+            "\nGround truth moved to Firestore. Either publish it\n"
+            "  python publish_registry.py\n"
+            "or authenticate\n"
+            "  gcloud auth application-default login\n"
+        )
+        return 1
+
+    check("battery registry reachable", True, f"roster {version}")
     check(
         "ground truth by CRD",
         firm.get("disciplinary", {}).get("any_disclosure") is True,

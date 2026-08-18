@@ -9,3 +9,7 @@ opentelemetry-exporter-gcp-trace
 opentelemetry-exporter-gcp-monitoring
 opentelemetry-resourcedetector-gcp
 opentelemetry-instrumentation-google-genai
+
+# Battery Registry: ground truth is read from Firestore at request time, not
+# from a bundled file. Not pulled in by google-adk's default install.
+google-cloud-firestore

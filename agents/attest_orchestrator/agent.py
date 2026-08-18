@@ -6,8 +6,10 @@ now rather than on Aug 27: ADK agent definition, tool calling, a Pub/Sub trigger
 entry point, Cloud Trace export, and the hash-chain shape the Evidence Archive
 will use.
 
-Ground truth is read from a bundled JSON file here. Swap `_load_firms` for a
-Firestore read in the Aug 18-19 phase; nothing else in this file needs to change.
+Ground truth comes from the Battery Registry in Firestore (see `registry.py`),
+content-addressed so a run can name the roster version it was scored against.
+`ground_truth.json` remains in the repo as the reviewable source that
+`publish_registry.py` uploads.
 """
 
 from __future__ import annotations
@@ -18,10 +20,10 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from functools import lru_cache
-from pathlib import Path
 
 from google.adk.agents import Agent
+
+from . import registry
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +32,11 @@ logger = logging.getLogger(__name__)
 # deployment works.
 MODEL = os.environ.get("ATTEST_MODEL", "gemini-3.5-flash-lite")
 
-GROUND_TRUTH_PATH = Path(__file__).parent / "ground_truth.json"
 
-
-@lru_cache(maxsize=1)
 def _load_firms() -> dict[str, dict]:
     """Keyed by CRD, never by name — the roster contains distinct firms that
     share a primary business name, and name-keying silently merges them."""
-    firms = json.loads(GROUND_TRUTH_PATH.read_text(encoding="utf-8"))
-    return {f["crd"]: f for f in firms}
+    return registry.load_firms()
 
 
 def get_adv_ground_truth(crd: str) -> dict:

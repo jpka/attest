@@ -49,20 +49,24 @@ Three adjustments were needed and are baked into `deploy.sh`:
 ```
 agents/attest_orchestrator/
     agent.py            root_agent + 3 tools
-    ground_truth.json   the 5 premise-test firms, keyed by CRD
+    registry.py         Battery Registry — content-addressed ground truth
+    ground_truth.json   the 5 premise-test firms; the reviewable source
     requirements.txt    extra deps (google-adk comes from the image)
 deploy.sh               idempotent gcloud driver
+publish_registry.py     ground_truth.json -> Firestore
 local_test.py           run everything locally first
 ```
 
 ## Run it locally first
 
 ```bash
-pip install google-adk
+pip install google-adk google-cloud-firestore
+gcloud auth application-default login   # ground truth is a Firestore read
+python publish_registry.py              # once, or after editing ground_truth.json
 python local_test.py
 ```
 
-All eight checks should pass. The last one makes a real model call.
+All nine checks should pass. The last one makes a real model call.
 
 ## Then deploy
 
@@ -100,6 +104,34 @@ tier; a full battery run is single-digit dollars against the $150 credit. Keep e
 loop on a `-flash-lite` model —
 `gemini-3.5-flash` is capped at 20 requests/day on free tier and will stall a batch run.
 
+## The Battery Registry
+
+Ground truth is not a file the agent ships with. It is a **content-addressed roster** in
+Firestore, so every run can name the version it was scored against:
+
+```
+rosters/{version}                 metadata: firm_count, crds, source
+rosters/{version}/firms/{crd}     one firm, native fields
+registry/current                  pointer: {"roster_version": ...}
+```
+
+`{version}` is `sha256(json.dumps(roster, sort_keys=True))[:12]` — deliberately the same
+twelve-character scheme as `BATTERY_VERSION` in `premise_test.py`, not a second one that looks
+similar. A roster version and a battery version are comparable strings and a run records both.
+
+Two properties fall out of content addressing. Republishing unchanged data is a no-op that
+lands on identical document paths, so the publisher is safe to re-run. And editing the source
+produces a *new* version rather than mutating one in place, so a roster is immutable under its
+own name — which is what makes "scored against roster 794e76b2e12f" a claim that means
+something a month later.
+
+`ATTEST_ROSTER_VERSION` pins a run to a specific roster. Unset means "follow
+`registry/current`", which is right for a scheduled run and wrong for re-scoring an old one.
+
+**No fallback to the bundled JSON.** A missing roster or missing credentials raises. An agent
+that silently reads some other ground truth produces a run that looks normal and is scored
+against a roster nobody chose — the exact failure mode this product exists to detect.
+
 ## Design notes carried forward
 
 **Ground truth is keyed by CRD, never by name.** The SEC roster contains distinct firms sharing
@@ -134,6 +166,9 @@ touches ADV data, not only in the Scorer.
 
 ## Next
 
-Aug 18–19 per the re-plan: move `ground_truth.json` into Firestore and stand up the Battery
-Registry with the existing content-hash scheme (`BATTERY_VERSION` in `premise_test.py`) rather
-than inventing a second one. Only `_load_firms()` in `agent.py` should need to change.
+Aug 19 per the re-plan: ADV ingestion — port `adv_schema.py` and `select_firms.py` so the
+roster is generated from the SEC bulk data rather than hand-assembled, then republish it. The
+registry layout above does not change; only what feeds `ground_truth.json` does.
+
+Aug 20: run the probe battery through the deployed runtime via Pub/Sub, recording both the
+roster version and `BATTERY_VERSION` on each run.
