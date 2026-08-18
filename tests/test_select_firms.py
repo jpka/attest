@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from roster_factory import row, write_roster
+from roster_factory import future_date, recent_date, row, write_roster
 
 from ingest import adv_schema as adv
 from ingest.anonymize import FICTIONAL
@@ -48,7 +48,7 @@ def test_selects_one_of_each_bucket(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
         row(crd="1000006", name="FIRM F", aum="50000000"),
         row(crd="1000007", name="FIRM G", status_date="01/01/2024"),
@@ -73,7 +73,7 @@ def test_short_row_skipped_and_counted(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -100,7 +100,7 @@ def test_empty_crd_skipped(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -117,7 +117,7 @@ def test_wrong_form_version_skipped(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -134,7 +134,7 @@ def test_aum_out_of_band_skipped(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -151,7 +151,7 @@ def test_duplicate_crd_skipped(tmp_path):
         row(crd="1000001", name="FIRM A DUPLICATE"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -162,9 +162,9 @@ def test_duplicate_crd_skipped(tmp_path):
 
 
 def test_future_dated_registration_not_recent():
-    future = row(status_date="09/01/2026")
+    future = row(status_date=future_date())
     assert classify(future) is None
-    assert months_since("09/01/2026") is None
+    assert months_since(future_date()) is None
 
 
 def test_invalid_status_date_skipped(tmp_path):
@@ -175,7 +175,7 @@ def test_invalid_status_date_skipped(tmp_path):
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date="03/15/2025"),
+        row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
@@ -187,7 +187,7 @@ def test_invalid_status_date_skipped(tmp_path):
 
 def test_classify_buckets():
     assert classify(row(disciplinary=True)) == "disciplinary"
-    assert classify(row(status_date="03/15/2025")) == "recent"
+    assert classify(row(status_date=recent_date())) == "recent"
     assert classify(row(website_count="0")) == "thin_web"
     assert classify(row(status_date="01/01/2010")) == "clean"
 

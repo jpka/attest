@@ -48,12 +48,41 @@ FICTIONAL = [
 ]
 
 
+# Free-text fields copied verbatim into the anonymized record. A description
+# that names the originating registrant would out the firm even after the
+# identity fields are replaced, so it is checked before writing.
+RETAINED_FREE_TEXT = (("services", "other_description"),
+                      ("compensation", "other_description"))
+# Tokens that identify the real registrant. Two-letter state/country codes are
+# excluded: "CA" inside "CALIFORNIA" is not a leak.
+IDENTITY_FIELDS = ("name", "legal_name", "crd", "sec_number", "city", "website")
+
+
+def _identity_leak(firm, text):
+    folded = text.casefold()
+    for field in IDENTITY_FIELDS:
+        value = firm.get(field)
+        if (isinstance(value, str) and len(value.strip()) >= 4
+                and value.strip().casefold() in folded):
+            return field, value
+    return None
+
+
 def anonymize(firms):
     """Return a new list with each firm's identity replaced by a fixed fictional one."""
     if len(firms) != len(FICTIONAL):
         sys.exit(f"expected {len(FICTIONAL)} selected firms, got {len(firms)}")
     result = []
     for i, firm in enumerate(firms):
+        for section, field in RETAINED_FREE_TEXT:
+            text = (firm.get(section) or {}).get(field)
+            if isinstance(text, str) and text.strip():
+                leak = _identity_leak(firm, text)
+                if leak is not None:
+                    sys.exit(
+                        f"{firm.get('crd')}: retained {section}.{field} contains "
+                        f"identity token {leak[0]}={leak[1]!r}: {text!r}"
+                    )
         out = copy.deepcopy(firm)
         f = FICTIONAL[i]
         out['crd'] = f['crd']

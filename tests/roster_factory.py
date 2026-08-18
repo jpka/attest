@@ -1,8 +1,21 @@
 """Build synthetic Form ADV bulk-roster rows for tests."""
 
 import csv
+from datetime import timedelta
 
 from ingest import adv_schema as adv
+from ingest.select_firms import REFERENCE_DATE
+
+
+def recent_date():
+    """A registration date inside the 18-month recent window, relative to the
+    pinned clock — so the fixtures stay recent no matter when the tests run."""
+    return (REFERENCE_DATE - timedelta(days=120)).strftime("%m/%d/%Y")
+
+
+def future_date():
+    """A registration date strictly after the pinned clock, in any year."""
+    return (REFERENCE_DATE + timedelta(days=1)).strftime("%m/%d/%Y")
 
 
 def row(crd="1000001", name="TEST FIRM", aum="500000000", status_date="01/01/2010",

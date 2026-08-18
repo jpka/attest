@@ -107,6 +107,10 @@ def main() -> int:
         "pubsub trigger registered",
         "/apps/{app_name}/trigger/pubsub" in routes,
     )
+    if FAILED:
+        # Anything above failed: return before the live model call, which
+        # costs tokens and would only mask the validation error.
+        return 1
 
     envelope = {
         "message": {

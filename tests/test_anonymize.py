@@ -56,3 +56,18 @@ def test_does_not_mutate_input():
 def test_length_mismatch_exits():
     with pytest.raises(SystemExit):
         anonymize(_make_firms(len(FICTIONAL) - 1))
+
+
+def test_retained_text_naming_real_firm_exits():
+    firms = _make_firms(len(FICTIONAL))
+    firms[0]["services"] = {"other_description": "REAL FIRM 0 CUSTODIAL SERVICES"}
+    with pytest.raises(SystemExit):
+        anonymize(firms)
+
+
+def test_retained_text_without_identity_leak_ok():
+    firms = _make_firms(len(FICTIONAL))
+    firms[0]["services"] = {"other_description": "WRAP FEE MANAGEMENT PROGRAMS"}
+    firms[0]["compensation"] = {"other_description": ""}
+    out = anonymize(firms)
+    assert out[0]["services"]["other_description"] == "WRAP FEE MANAGEMENT PROGRAMS"
