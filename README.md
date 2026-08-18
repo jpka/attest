@@ -52,6 +52,9 @@ agents/attest_orchestrator/
     registry.py         Battery Registry — content-addressed ground truth
     ground_truth.json   the 5 premise-test firms; the reviewable source
     requirements.txt    extra deps (google-adk comes from the image)
+ingest/
+    adv_schema.py       Form ADV Part 1A column map — the ground-truth schema
+    select_firms.py     SEC bulk roster -> ground_truth.json (see ingest/README.md)
 deploy.sh               idempotent gcloud driver
 publish_registry.py     ground_truth.json -> Firestore
 local_test.py           run everything locally first
@@ -166,9 +169,12 @@ touches ADV data, not only in the Scorer.
 
 ## Next
 
-Aug 19 per the re-plan: ADV ingestion — port `adv_schema.py` and `select_firms.py` so the
-roster is generated from the SEC bulk data rather than hand-assembled, then republish it. The
-registry layout above does not change; only what feeds `ground_truth.json` does.
+Aug 19 ✅: ADV ingestion — `adv_schema.py` and `select_firms.py` are ported to `ingest/`, so
+the roster is now generated from the SEC bulk data rather than hand-assembled. The pipeline,
+reproducibility notes and the known `is_fee_only` limitation (tracked for the Scorer phase)
+are in `ingest/README.md`. The registry layout does not change; only what feeds
+`ground_truth.json` does, and the committed roster `794e76b2e12f` regenerates identically
+from the 2026-08-11 SEC release.
 
 Aug 20: run the probe battery through the deployed runtime via Pub/Sub, recording both the
 roster version and `BATTERY_VERSION` on each run.
