@@ -50,8 +50,12 @@ Three adjustments were needed and are baked into `deploy.sh`:
 agents/attest_orchestrator/
     agent.py            root_agent + 3 tools
     registry.py         Battery Registry — content-addressed ground truth
-    ground_truth.json   the 5 premise-test firms; the reviewable source
+    ground_truth.json   fictionalized roster; the reviewable source
     requirements.txt    extra deps (google-adk comes from the image)
+ingest/
+    adv_schema.py       Form ADV Part 1A column map — the ground-truth schema
+    select_firms.py     SEC bulk roster -> real selection (gitignored, never committed)
+    anonymize.py        real selection -> fictionalized ground_truth.json
 deploy.sh               idempotent gcloud driver
 publish_registry.py     ground_truth.json -> Firestore
 local_test.py           run everything locally first
@@ -122,7 +126,7 @@ similar. A roster version and a battery version are comparable strings and a run
 Two properties fall out of content addressing. Republishing unchanged data is a no-op that
 lands on identical document paths, so the publisher is safe to re-run. And editing the source
 produces a *new* version rather than mutating one in place, so a roster is immutable under its
-own name — which is what makes "scored against roster 794e76b2e12f" a claim that means
+own name — which is what makes "scored against roster 32a6587ad82b" a claim that means
 something a month later.
 
 `ATTEST_ROSTER_VERSION` pins a run to a specific roster. Unset means "follow
@@ -131,6 +135,18 @@ something a month later.
 **No fallback to the bundled JSON.** A missing roster or missing credentials raises. An agent
 that silently reads some other ground truth produces a run that looks normal and is scored
 against a roster nobody chose — the exact failure mode this product exists to detect.
+
+**The committed roster is fictionalized.** The firm identities in `ground_truth.json` — names,
+CRDs, SEC numbers, addresses, websites — are synthetic. The quantitative record shapes come
+from real SEC registrants, so the scorer still tests realistic records. `select_firms.py`'s
+output never enters the repo (gitignored). That is what lets this repository go public on
+Aug 28 without naming a real firm.
+
+Residual re-identification risk is acknowledged: the quantitative values are real Form ADV
+figures, and a reader with the public SEC bulk roster could in principle link them back to
+the originating registrant. Identities are fictionalized, not the values — the values are what
+the scorer compares a model's claims against, and the submission's findings were measured on
+these exact record shapes. The public repo never names a real firm.
 
 ## Design notes carried forward
 
@@ -166,9 +182,15 @@ touches ADV data, not only in the Scorer.
 
 ## Next
 
-Aug 19 per the re-plan: ADV ingestion — port `adv_schema.py` and `select_firms.py` so the
-roster is generated from the SEC bulk data rather than hand-assembled, then republish it. The
-registry layout above does not change; only what feeds `ground_truth.json` does.
+Aug 18 ✅: ADV ingestion — the pipeline now runs in two steps: `select_firms.py` selects real
+firms from the SEC bulk roster, and `anonymize.py` fictionalizes their identities before
+`ground_truth.json` is written. The committed roster `32a6587ad82b` is fictionalized and
+regenerates identically from the 2026-08-11 SEC release followed by the deterministic
+positional anonymization. A Firestore publish is now required after merge — the old pointer in
+`registry/current` still names the pre-anonymization roster. The pipeline, reproducibility
+notes and the known `is_fee_only` limitation (tracked for the Scorer phase) are in
+`ingest/README.md`. The registry layout does not change; only what feeds `ground_truth.json`
+does.
 
 Aug 20: run the probe battery through the deployed runtime via Pub/Sub, recording both the
 roster version and `BATTERY_VERSION` on each run.

@@ -3,3 +3,5 @@ __pycache__/
 .adk/
 .env
 .venv
+selected_firms.json
+.pytest_cache/

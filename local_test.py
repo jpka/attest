@@ -58,7 +58,7 @@ def main() -> int:
         from attest_orchestrator import registry  # noqa: E402
 
         version = registry.roster_version()
-        firm = get_adv_ground_truth("900001")
+        firm = get_adv_ground_truth("900003")
     except Exception as exc:  # noqa: BLE001
         check("battery registry reachable", False, f"{type(exc).__name__}: {exc}")
         print(
@@ -70,6 +70,11 @@ def main() -> int:
         return 1
 
     check("battery registry reachable", True, f"roster {version}")
+    if firm.get("error"):
+        # Stale publish (Firestore still points at a pre-anonymization roster):
+        # fail now rather than spend tokens on the live model call below.
+        check("ground truth by CRD", False, f"CRD 900003 absent from roster {version}")
+        return 1
     check(
         "ground truth by CRD",
         firm.get("disciplinary", {}).get("any_disclosure") is True,
@@ -102,10 +107,14 @@ def main() -> int:
         "pubsub trigger registered",
         "/apps/{app_name}/trigger/pubsub" in routes,
     )
+    if FAILED:
+        # Anything above failed: return before the live model call, which
+        # costs tokens and would only mask the validation error.
+        return 1
 
     envelope = {
         "message": {
-            "data": base64.b64encode(json.dumps({"crd": "900001"}).encode()).decode(),
+            "data": base64.b64encode(json.dumps({"crd": "900003"}).encode()).decode(),
             "attributes": {"battery_version": "4ea67a1f35e1"},
             "messageId": "local-1",
         },
