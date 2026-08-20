@@ -142,7 +142,7 @@ ingest/
 deploy.sh                 idempotent gcloud driver
 publish_registry.py       ground_truth.json -> Firestore
 local_test.py             run everything locally first
-tests/                    115 tests; ruff + pytest on every push and PR
+tests/                    120 tests; ruff + pytest on every push and PR
 ```
 
 ## The Battery Registry
@@ -183,9 +183,25 @@ A pure hash chain detects edits but not **truncation** — dropping the last N e
 a valid chain. The sequence number closes that: a gap is evidence. The tail lives in
 Firestore at `evidence_chain/meta` and is advanced inside a transaction with optimistic
 concurrency, so two Cloud Run instances cannot fork the chain. The payload is written to
-GCS *after* the transaction commits, with `if_generation_match=0`, so the chain never
-advances without a durable object behind it and a retry is idempotent rather than a second
-entry.
+GCS *after* the transaction commits, with `if_generation_match=0`, so a retry is idempotent
+rather than a second entry.
+
+**That ordering leaves a window, and it is closed explicitly.** Firestore commits first on
+purpose — writing GCS first would orphan an object whose entry never joined the chain, with
+no tail to reconcile it against. But it means a failure between the two steps leaves a
+committed entry and an advanced tail with no durable object behind it, and the next append
+would read that tail, succeed, and bury the gap one entry deeper.
+
+`reconcile_tail()` runs before every append: if the tail's object is missing, it re-writes
+**that same committed entry** rather than rolling the chain back. Rolling back would retract
+a hash that may already have been reported to a caller, and because entries are
+content-addressed, a re-write is either byte-identical or it is corruption — nothing is
+invented. If the tail names a sequence with no entry document, or the entry fails its own
+verification, it refuses loudly instead of guessing.
+
+This is not a hypothetical window. Entries 1 and 2 of the live chain exist in Firestore with
+no GCS object, permanently, because the bucket did not exist when they were written and
+nothing reconciled before entry 3 was appended. See the note further down.
 
 **The agent cannot supply the linkage.** `append_evidence` takes only a payload; it reads
 the tail itself and computes `prev_hash`. An earlier version accepted `prev_hash` as a tool
@@ -307,6 +323,17 @@ Both are now verified by execution rather than by reading: `apis`, `infra`, `mem
 `deploy`, `wire` and `smoke` have each been run end to end against the live project, and the
 hash chain has been read back out of Firestore and Cloud Storage — `prev_hash` of entry 4
 equals `entry_hash` of entry 3, and the Firestore tail agrees with both.
+
+**And it left a permanent scar, which is the useful part.** Reading the two stores side by
+side shows Firestore holding entries 1, 2, 3, 4 and Cloud Storage holding only `3.json` and
+`4.json`. Entries 1 and 2 committed during the window when the bucket did not exist; their
+payload objects were never written and cannot be reconstructed, because the only durable copy
+was the one that failed. The chain still verifies — the hashes link and the sequence has no
+gap — which is exactly what makes it worth stating plainly rather than quietly renumbering:
+**a hash chain proves nothing was altered, not that everything was stored.**
+
+That is the concrete case for `reconcile_tail()`, which now runs before every append and
+would have caught this at entry 2 instead of leaving it for a code review to find at entry 4.
 
 ---
 

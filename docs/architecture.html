@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Attest — surveillance architecture</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- No external resources: this file must render offline, with no network
+     dependency. Typography falls back to the platform monospace stack. -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     background:#020617; color:#e2e8f0;
-    font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
     padding:32px; min-height:100vh;
   }
   .wrap { max-width:1300px; margin:0 auto; }
@@ -94,10 +95,11 @@
           stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.55"/>
     <text x="40" y="88" font-size="9" fill="#fbbf24" letter-spacing="0.08em">REGION · us-central1</text>
 
-    <!-- Vertex global boundary — deliberately outside the region box -->
-    <rect x="864" y="96" width="352" height="272" rx="12" fill="none"
+    <!-- Vertex `global` boundary — outside the region box, and holding ONLY the
+         subject model. The Memory Bank engine is regional and lives inside. -->
+    <rect x="864" y="110" width="352" height="140" rx="12" fill="none"
           stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.55"/>
-    <text x="880" y="88" font-size="9" fill="#fbbf24" letter-spacing="0.08em">VERTEX AI · location = global</text>
+    <text x="880" y="102" font-size="9" fill="#fbbf24" letter-spacing="0.08em">VERTEX AI · location = global</text>
 
     <!-- IAM trust boundary around the two service identities -->
     <rect x="48" y="640" width="752" height="132" rx="8" fill="none"
@@ -123,9 +125,9 @@
     <!-- Cloud Run -> Vertex model (crosses the region boundary) -->
     <path d="M 700 340 L 892 232" stroke="#fbbf24" stroke-width="1.3" fill="none" marker-end="url(#ar-amber)"/>
     <text x="716" y="288" font-size="7.5" fill="#fbbf24">model calls</text>
-    <!-- Cloud Run -> Memory Bank engine (regional, stays inside) -->
-    <path d="M 700 404 L 892 452" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
-    <text x="716" y="446" font-size="7.5" fill="#a78bfa">remember / recall</text>
+    <!-- Cloud Run -> Memory Bank engine (regional: stays inside the boundary) -->
+    <path d="M 548 508 L 548 528 L 200 528 L 200 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <text x="212" y="524" font-size="7.5" fill="#a78bfa">remember / recall</text>
     <!-- Cloud Run -> Firestore -->
     <path d="M 480 508 L 480 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
     <!-- Cloud Run -> GCS -->
@@ -202,16 +204,16 @@
     <text x="906" y="208" font-size="7" fill="#64748b">endpoint — verified us-central1, us-east5,</text>
     <text x="906" y="219" font-size="7" fill="#64748b">us-west1, europe-west4 — and resolves only here</text>
 
-    <!-- Memory Bank engine — regional, inside the region box -->
-    <rect x="892" y="404" width="296" height="96" rx="6" fill="#0f172a"/>
-    <rect x="892" y="404" width="296" height="96" rx="6"
+    <!-- Memory Bank engine — REGIONAL, so it is drawn inside the region box.
+         Only the subject model belongs in the `global` boundary. -->
+    <rect x="64" y="556" width="252" height="72" rx="6" fill="#0f172a"/>
+    <rect x="64" y="556" width="252" height="72" rx="6"
           fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
-    <text x="906" y="426" font-size="12" font-weight="600" fill="#ddd6fe">Vertex AI Memory Bank</text>
-    <text x="906" y="441" font-size="9" fill="#94a3b8">reasoningEngine · us-central1</text>
-    <text x="906" y="457" font-size="7.5" fill="#a78bfa">regional — reasoning engines do not exist in global,</text>
-    <text x="906" y="467" font-size="7.5" fill="#a78bfa">so this cannot share the model's location variable</text>
-    <text x="906" y="481" font-size="7" fill="#64748b">generation gemini-2.5-flash</text>
-    <text x="906" y="492" font-size="7" fill="#64748b">embedding text-embedding-005 (required for retrieval)</text>
+    <text x="76" y="576" font-size="11" font-weight="600" fill="#ddd6fe">Vertex AI Memory Bank</text>
+    <text x="76" y="589" font-size="8" fill="#94a3b8">reasoningEngine · us-central1</text>
+    <text x="76" y="602" font-size="7" fill="#a78bfa">regional — engines do not exist in global, so this</text>
+    <text x="76" y="611" font-size="7" fill="#a78bfa">cannot share the model's location variable</text>
+    <text x="76" y="622" font-size="6.5" fill="#64748b">gemini-2.5-flash · text-embedding-005 (required for retrieval)</text>
 
     <!-- Observability -->
     <rect x="892" y="556" width="296" height="88" rx="6" fill="#0f172a"/>
@@ -293,7 +295,8 @@
         <li>• Append-only <b>SHA-256 hash chain</b>. Each entry carries <b>payload_sha256</b>, <b>prev_hash</b>, a monotonic <b>sequence</b>, timestamp and model id.</li>
         <li>• A pure chain detects edits but <b>not truncation</b> — dropping the last N entries leaves a valid chain. The sequence number closes that: a gap is evidence.</li>
         <li>• The tail advances inside a <b>Firestore transaction with optimistic concurrency</b>, so two Cloud Run instances cannot fork the chain.</li>
-        <li>• The GCS object is written <b>after</b> the transaction commits, with <b>ifGenerationMatch=0</b> — the chain never advances without durable backing, and a retry is idempotent.</li>
+        <li>• The GCS object is written <b>after</b> the transaction commits, with <b>ifGenerationMatch=0</b>, so a retry is idempotent rather than a second entry.</li>
+        <li>• That ordering leaves a window: commit succeeds, object write fails. <b>reconcile_tail()</b> runs before every append and re-writes the missing object for an already-committed tail — it never rolls the chain back, because the entry may already have been reported and a content-addressed entry rewrites byte-identically or it is corruption. This is not hypothetical: entries 1–2 of the live chain have no object, because nothing reconciled before entry 3.</li>
         <li>• The agent <b>cannot supply prev_hash</b>. The tool reads the tail itself; an earlier version took it as an argument, which let the model fork or reset the chain by passing a stale value.</li>
       </ul>
     </div>
@@ -325,7 +328,7 @@
     <span>project attest-505313</span>
     <span>region us-central1</span>
     <span>roster 32a6587ad82b</span>
-    <span>generated 2026-08-28</span>
+    <span>generated 2026-08-20</span>
   </footer>
 
 </div>
