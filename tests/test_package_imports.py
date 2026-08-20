@@ -44,9 +44,13 @@ class TestLazyLoader:
         """A resolved name must become a plain attribute.
 
         If it stays unbound, every later lookup re-enters __getattr__ — which
-        is what made the recursion unbounded.
+        is what made the recursion unbounded. Importing the submodule directly
+        binds the parent attribute as a side effect, so that binding is cleared
+        first to make sure __getattr__ is what does the work here.
         """
         importlib.import_module("agents.attest_orchestrator.registry")
+        vars(pkg).pop("registry", None)
+        assert "registry" not in vars(pkg)
         _ = pkg.registry
         assert "registry" in vars(pkg)
 
