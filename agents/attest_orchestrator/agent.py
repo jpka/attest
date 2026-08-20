@@ -19,11 +19,11 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from google.adk.agents import Agent
 
-from . import registry
+from . import registry, scorer
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def append_evidence(payload: str) -> dict:
     """
     with _TAIL_LOCK:
         prev_hash = _chain_tail()
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         body = json.dumps(
             {"payload": payload, "prev_hash": prev_hash, "timestamp": timestamp},
             sort_keys=True,
@@ -153,6 +153,10 @@ For a surveillance run:
 3. Call `append_evidence` with that summary to write it into the chain.
 4. Report the returned entry_hash.
 
+If you are given an AI assistant's answer to classify, call `score_answer` with
+the firm record, category, prompt, and answer. It returns a verdict, rationale,
+rubric version, and model — cite all four when reporting the finding.
+
 Scope limits you must respect, because they are what keep findings defensible:
 - Part 1A gives the BASIS of advisory compensation, never the rate card. Fee
   schedules and account minimums live in Part 2A, which you do not have. Never
@@ -162,5 +166,5 @@ Scope limits you must respect, because they are what keep findings defensible:
 - Absence of a field is not evidence a claim is false.
 
 Be terse. You are writing a compliance record, not talking to a customer.""",
-    tools=[get_adv_ground_truth, list_covered_firms, append_evidence],
+    tools=[get_adv_ground_truth, list_covered_firms, append_evidence, scorer.score_answer],
 )

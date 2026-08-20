@@ -419,7 +419,7 @@
       },
       "other_description": "",
       "receives_commissions": false,
-      "is_fee_only": true
+      "is_fee_only": false
     },
     "services": {
       "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
@@ -732,7 +732,7 @@
       },
       "other_description": "",
       "receives_commissions": false,
-      "is_fee_only": true
+      "is_fee_only": false
     },
     "services": {
       "adv_item": "Form ADV Part 1A Item 5.G - types of advisory services provided",
