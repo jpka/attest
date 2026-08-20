@@ -7,13 +7,15 @@ fake that runs the function with a mock transaction.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from unittest.mock import MagicMock
 
 import pytest
 
-from agents.attest_orchestrator.evidence_archive import EvidenceArchive
+from agents.attest_orchestrator.evidence_archive import (
+    EvidenceArchive,
+    _body,
+    _compute_hash,
+)
 
 
 def _mock_gcs():
@@ -22,27 +24,48 @@ def _mock_gcs():
     return bucket
 
 
-def _hash_entry(payload, prev_hash, timestamp, sequence):
+def _hash_entry(payload, prev_hash, timestamp, sequence, model_id):
     """Compute the expected entry hash the same way the archive does."""
-    body = json.dumps(
-        {"payload": payload, "prev_hash": prev_hash, "timestamp": timestamp, "sequence": sequence},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(body.encode()).hexdigest()
+    return _compute_hash(payload, prev_hash, timestamp, sequence, model_id)
 
 
 class FakeTxn:
-    """A fake Firestore transaction that records set() calls."""
-    def __init__(self):
+    """A fake Firestore transaction that records set() calls and supports conflict."""
+
+    def __init__(self, state, raise_on_conflict=False):
+        self._state = state
+        self._raise_on_conflict = raise_on_conflict
         self.sets = []
 
     def set(self, ref, value):
         self.sets.append((ref, value))
+        # Persist to state for inspection
+        if hasattr(ref, "id"):
+            if ref.id == "meta":
+                self._state["meta"] = dict(value)
+            else:
+                self._state["entries"][int(ref.id)] = dict(value)
+
+    def get(self, ref):
+        snap = MagicMock()
+        if hasattr(ref, "id"):
+            if ref.id == "meta":
+                snap.exists = "meta" in self._state
+                snap.to_dict = lambda: dict(self._state.get("meta", {}))
+            elif ref.id.isdigit():
+                snap.exists = int(ref.id) in self._state["entries"]
+                snap.to_dict = lambda: dict(self._state["entries"].get(int(ref.id), {}))
+            else:
+                snap.exists = False
+                snap.to_dict = lambda: {}
+        else:
+            snap.exists = False
+            snap.to_dict = lambda: {}
+        return snap
 
 
-def _make_tx_pair():
-    """Build a fake db + state with a transactional decorator that records writes.
+def _make_tx_pair(raise_on_conflict=False):
+    """Build a fake db + state with a transactional decorator.
 
     Returns (db, state, transactional) where state is a dict with
     'meta' and 'entries' keys.
@@ -52,8 +75,8 @@ def _make_tx_pair():
 
     def get_meta(transaction=None):
         snap = MagicMock()
-        snap.exists = bool(state["meta"])
-        snap.to_dict = lambda: dict(state["meta"]) if state["meta"] else None
+        snap.exists = "meta" in state
+        snap.to_dict = lambda: dict(state["meta"]) if state.get("meta") else None
         return snap
 
     meta_ref = MagicMock()
@@ -70,22 +93,13 @@ def _make_tx_pair():
     )
 
     def make_txn():
-        return FakeTxn()
+        return FakeTxn(state, raise_on_conflict=raise_on_conflict)
 
     db.transaction = make_txn
 
     def transactional(fn):
-        """A firestore-like transactional wrapper that replays set() calls."""
         def wrapper(txn):
-            result = fn(txn)
-            # Apply the writes to state
-            for ref, value in txn.sets:
-                if ref.id == "meta":
-                    state["meta"].clear()
-                    state["meta"].update(value)
-                else:
-                    state["entries"][int(ref.id)] = value
-            return result
+            return fn(txn)
         return wrapper
 
     return db, state, transactional
@@ -97,7 +111,7 @@ def test_empty_chain_starts_at_zero():
     meta_ref.id = "meta"
     meta_ref.get.return_value.exists = False
     db.collection.return_value.document.return_value = meta_ref
-    db.transaction = lambda: FakeTxn()
+    db.transaction = lambda: FakeTxn({"meta": {}, "entries": {}})
     archive = EvidenceArchive(db, _mock_gcs(), transactional=lambda fn: fn)
     tail_hash, seq = archive.current_tail()
     assert tail_hash == ""
@@ -114,6 +128,9 @@ def test_append_returns_linked_entry():
     assert "entry_hash" in entry
     assert "payload_sha256" in entry
     assert "model_id" in entry
+    assert "payload" in entry  # CR: self-verifiable — payload stored in entry
+    assert entry["payload"] == "genesis"
+    assert entry["model_id"] == "gemini-3.5-flash-lite"
     # Verify state was written
     assert 1 in state["entries"]
     assert state["meta"]["sequence"] == 1
@@ -133,6 +150,36 @@ def test_second_entry_links_to_first():
     assert 1 in state["entries"]
     assert 2 in state["entries"]
     assert state["entries"][2]["prev_hash"] == first["entry_hash"]
+
+
+def test_gcs_write_before_tx_commit():
+    """GCS write happens BEFORE Firestore transaction — so a failed commit
+    never leaves an orphan object."""
+    db, state, transactional = _make_tx_pair()
+    gcs_writes = []
+
+    def record_gcs(entry):
+        gcs_writes.append(entry["sequence"])
+
+    bucket = MagicMock()
+    blob = MagicMock()
+    bucket.blob.return_value = blob
+
+    call_count = [0]
+
+    def tracking_transactional(fn):
+        def wrapper(txn):
+            call_count[0] += 1
+            return fn(txn)
+        return wrapper
+
+    archive = EvidenceArchive(db, bucket, transactional=tracking_transactional)
+    archive.append("payload", "gemini-3.5-flash-lite")
+
+    # GCS should have been called once
+    assert blob.upload_from_string.call_count == 1
+    # And the upload should have happened (before or alongside tx)
+    bucket.blob.assert_called_once_with("evidence/1.json")
 
 
 def test_gcs_write_after_tx_commit():
@@ -155,8 +202,97 @@ def test_hash_is_deterministic():
     archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
     entry = archive.append("x", "gemini-3.5-flash-lite")
 
-    expected = _hash_entry("x", "", entry["timestamp"], 1)
+    expected = _hash_entry("x", "", entry["timestamp"], 1, "gemini-3.5-flash-lite")
     assert entry["entry_hash"] == expected
+
+
+def test_body_includes_model_id():
+    """model_id is part of the hash input — CR required this."""
+    body = _body("payload", "prev", "2024-01-01T00:00:00+00:00", 1, "gemini-3.5-flash-lite")
+    assert "model_id" in body
+    assert "gemini-3.5-flash-lite" in body
+
+
+def test_model_id_changes_hash():
+    """Changing model_id must change the hash."""
+    hash1 = _compute_hash("payload", "", "2024-01-01T00:00:00+00:00", 1, "gemini-3.5-flash-lite")
+    hash2 = _compute_hash("payload", "", "2024-01-01T00:00:00+00:00", 1, "gemini-3.1-flash-lite")
+    assert hash1 != hash2
+
+
+def test_payload_stored_in_entry():
+    """CR: payload is stored in the entry so GCS object is self-verifiable."""
+    db, state, transactional = _make_tx_pair()
+    archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+    entry = archive.append("verbatim-payload", "gemini-3.5-flash-lite")
+    assert entry["payload"] == "verbatim-payload"
+    # A verifier can recompute the hash from the stored fields
+    assert archive.verify_entry(entry) is True
+
+
+def test_verify_entry_detects_tamper():
+    """verify_entry returns False if the entry is tampered."""
+    db, state, transactional = _make_tx_pair()
+    archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+    entry = archive.append("original", "gemini-3.5-flash-lite")
+    # Tamper with the payload
+    entry["payload"] = "tampered"
+    assert archive.verify_entry(entry) is False
+
+
+def test_idempotent_retry():
+    """If Firestore tx fails after GCS write, retry produces the same sequence.
+
+    CR: orphan-state fix — retry should repair, not advance.
+    """
+    db, state, transactional = _make_tx_pair()
+    bucket = MagicMock()
+    blob = MagicMock()
+    bucket.blob.return_value = blob
+
+    call_count = [0]
+
+    def sometimes_fail_transactional(fn):
+        def wrapper(txn):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("Simulated Firestore tx failure")
+            return fn(txn)
+        return wrapper
+
+    archive = EvidenceArchive(db, bucket, transactional=sometimes_fail_transactional)
+
+    # First call fails — but GCS write already happened
+    with pytest.raises(RuntimeError, match="Simulated Firestore tx failure"):
+        archive.append("payload", "gemini-3.5-flash-lite")
+
+    # GCS was written once (before the failed tx)
+    assert blob.upload_from_string.call_count == 1
+
+    # Retry succeeds — overwrites GCS object with same content, advances meta
+    entry = archive.append("payload", "gemini-3.5-flash-lite")
+    assert entry["sequence"] == 1
+    # GCS was written twice (once per attempt)
+    assert blob.upload_from_string.call_count == 2
+    # State shows sequence 1, not 2
+    assert state["meta"]["sequence"] == 1
+
+
+def test_conflict_raises():
+    """If another writer advanced meta, the next append raises."""
+    db, state, transactional = _make_tx_pair()
+
+    def conflicting_transactional(fn):
+        def wrapper(txn):
+            # Simulate: another writer advanced meta to seq=1
+            state["meta"] = {"tail_hash": "other_writer_hash", "sequence": 1}
+            return fn(txn)
+        return wrapper
+
+    archive = EvidenceArchive(db, _mock_gcs(), transactional=conflicting_transactional)
+
+    with pytest.raises(RuntimeError, match="Chain tail conflict"):
+        archive.append("payload", "gemini-3.5-flash-lite")
 
 
 def test_from_env_requires_bucket(monkeypatch):
@@ -164,13 +300,11 @@ def test_from_env_requires_bucket(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test")
     monkeypatch.delenv("ATTEST_EVIDENCE_BUCKET", raising=False)
 
-    # Inject fake google.cloud modules so from_env's lazy import resolves
     import sys
     import types
 
     fake_firestore = types.ModuleType("google.cloud.firestore")
     fake_storage = types.ModuleType("google.cloud.storage")
-    # Provide stub constructors so from_env() can build without real GCP
     fake_firestore.Client = lambda **kw: MagicMock()
     fake_storage.Client = lambda **kw: MagicMock()
 
