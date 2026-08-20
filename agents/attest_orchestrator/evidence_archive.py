@@ -45,6 +45,23 @@ META_DOC = ("evidence_chain", "meta")
 ENTRY_COLLECTION = "evidence_chain"
 
 
+def _is_permission_denied(exc: Exception) -> bool:
+    """True when ``exc`` is a 403 from Cloud Storage.
+
+    Matched structurally where possible — ``google.api_core.exceptions.Forbidden``
+    carries ``code == 403`` — and by message only as a fallback, so this keeps
+    working when the SDK is absent (the tests) or wraps the error differently.
+    Deliberately narrow: any other failure to read the bucket is a real error
+    and must not be mistaken for a missing permission.
+    """
+    if getattr(exc, "code", None) == 403 or getattr(exc, "status_code", None) == 403:
+        return True
+    text = str(exc)
+    return "403" in text and (
+        "does not have storage.objects" in text or "Permission" in text
+    )
+
+
 def _body(
     payload: str,
     prev_hash: str,
@@ -215,13 +232,39 @@ class EvidenceArchive:
 
         Returns the repaired entry, or ``None`` when there was nothing to do
         (the common case, and the empty-chain case).
+
+        Requires read access to the bucket, which is *not* implied by the write
+        access an appending identity needs. `roles/storage.objectCreator` alone
+        permits `create` and denies `objects.get`, so the existence probe below
+        403s under exactly the least-privilege posture this project argues for.
+        `cmd_infra` therefore grants `roles/storage.objectViewer` as well. When
+        the probe is denied anyway, reconciliation is skipped with a warning
+        rather than failing the append: an archive that refuses to record
+        evidence because it cannot audit itself has chosen the worse of two
+        failures.
         """
         tail_hash, seq = self.current_tail()
         if seq == 0:
             return None
 
         blob = self._bucket.blob(f"evidence/{seq}.json")
-        if blob.exists():
+        try:
+            exists = blob.exists()
+        except Exception as exc:  # noqa: BLE001
+            if _is_permission_denied(exc):
+                # Write-only identity. Do not fail the append over it — but do
+                # not pretend the check happened either.
+                logger.warning(
+                    "evidence.reconcile skipped seq=%d — no read access to the "
+                    "bucket (%s). Grant roles/storage.objectViewer to enable "
+                    "gap detection; appends continue unreconciled.",
+                    seq,
+                    type(exc).__name__,
+                )
+                return None
+            raise
+
+        if exists:
             # An object at the expected path is not by itself proof that the
             # right object is there. Compare it against what the committed
             # entry serializes to, so a divergent-but-self-valid object is
