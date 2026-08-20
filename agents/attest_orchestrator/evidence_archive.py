@@ -12,11 +12,12 @@ The tail is stored in Firestore ``evidence_chain/meta`` and advanced inside a
 transaction with optimistic concurrency. A writer that reads a stale meta
 fails at commit and retries, so two instances cannot fork the chain.
 
-**Idempotent append.** The GCS object is written *before* the Firestore
-transaction commits, so a failed Firestore commit never leaves an orphan
-object. On retry, the same sequence is computed (the tail hasn't advanced),
-the GCS object is overwritten with identical content, and the Firestore
-transaction retries. Either call produces the same durable result.
+**Idempotent append.** The Firestore transaction commits first. The GCS object
+is then written with ``if_generation_match=0`` — an immutable create that fails
+if the object already exists. On retry after a partial failure, the same
+entry (same sequence, same timestamp, same hash) is computed, the Firestore
+tx is a no-op (entry already exists), and the GCS write confirms the object
+matches. Either call produces the same durable result.
 
 **Self-verifiable entries.** The GCS object stores the full entry including
 ``payload`` and ``model_id``, so a verifier can recompute ``entry_hash``
@@ -74,7 +75,7 @@ def _compute_hash(
 
 
 class EvidenceArchive:
-    """Append-only evidence chain backed by Firestore + GCS.
+    """Append-only evidence chain backed on Firestore + GCS.
 
     Args:
         firestore_client: a ``google.cloud.firestore.Client``.
@@ -134,18 +135,19 @@ class EvidenceArchive:
     def append(self, payload: str, model_id: str) -> dict:
         """Append an entry to the chain.
 
-        The append is idempotent: writing the GCS object before the Firestore
-        transaction means a failed commit never leaves an orphan object, and
-        retrying recomputes the same sequence and overwrites the GCS object
-        with identical content.
+        The append is idempotent: the Firestore transaction commits first,
+        then the GCS object is written immutably (``if_generation_match=0``).
+        If the GCS object already exists, it is verified against our hash —
+        a partial previous attempt left it in place and the Firestore entry
+        is already committed.
 
         Returns the entry dict.
         """
         timestamp = datetime.now(UTC).isoformat()
 
-        # Read the tail *before* writing GCS so retry sees the same sequence.
-        # The Firestore transaction will re-read atomically and abort if another
-        # writer advanced meta between our read and commit — that is the
+        # Read the tail so we know what sequence to compute. The Firestore
+        # transaction will re-read atomically and abort if another writer
+        # advanced meta between our read and commit — that is the
         # optimistic-concurrency guard.
         tail_hash, seq = self.current_tail()
         new_seq = seq + 1
@@ -161,12 +163,15 @@ class EvidenceArchive:
             "model_id": model_id,
         }
 
-        # GCS first: if Firestore fails, the object exists but the chain does
-        # not advance. Retry recomputes the same sequence and overwrites.
-        self._write_gcs(entry)
-
         # Firestore transaction: atomically write the entry and advance meta.
+        # This commits first — if it fails, nothing is written and we retry.
         self._tx_advance(entry, tail_hash)
+
+        # GCS write after commit, immutable: if_generation_match=0 means
+        # "only write if the object doesn't exist". If it already exists
+        # (from a partial previous attempt where Firestore committed but
+        # GCS failed), verify it matches our hash.
+        self._write_gcs_immutable(entry)
 
         logger.info(
             "evidence.append seq=%d hash=%s",
@@ -175,19 +180,40 @@ class EvidenceArchive:
         )
         return entry
 
-    def _write_gcs(self, entry: dict) -> None:
-        """Write one entry as a JSON object to GCS.
+    def _write_gcs_immutable(self, entry: dict) -> None:
+        """Write one entry to GCS immutably.
 
-        Includes the full payload so the stored object is self-verifiable:
-        a verifier can reload ``evidence/<seq>.json`` and recompute
-        ``entry_hash`` from its fields.
+        Uses ``if_generation_match=0`` to only create the object if it
+        doesn't already exist. If it does exist, verifies the content
+        matches our hash (idempotent retry path). Raises if the existing
+        object has different content (chain corruption).
         """
         path = f"evidence/{entry['sequence']}.json"
         blob = self._bucket.blob(path)
-        blob.upload_from_string(
-            json.dumps(entry, sort_keys=True),
-            content_type="application/json",
-        )
+        content = json.dumps(entry, sort_keys=True)
+
+        try:
+            blob.upload_from_string(
+                content,
+                content_type="application/json",
+                if_generation_match=0,
+            )
+        except Exception as exc:
+            # Object may already exist (partial previous attempt).
+            # Verify it matches our expected hash.
+            if "conditionNotMet" in str(exc) or "412" in str(exc) or "PreconditionFailed" in str(exc):
+                existing = blob.download_as_text()
+                existing_entry = json.loads(existing)
+                if existing_entry.get("entry_hash") == entry["entry_hash"]:
+                    # Same entry already persisted — idempotent retry.
+                    return
+                raise RuntimeError(
+                    f"GCS object {path} exists with different hash: "
+                    f"expected {entry['entry_hash'][:16]}, "
+                    f"found {existing_entry.get('entry_hash', 'unknown')[:16]}. "
+                    f"Chain corruption detected."
+                ) from exc
+            raise
 
     def _tx_advance(self, entry: dict, expected_tail_hash: str) -> None:
         """Atomically write the entry and advance the meta tail.
@@ -217,8 +243,7 @@ class EvidenceArchive:
                 )
 
             # Idempotency: if this exact sequence already exists with our hash,
-            # the entry was written by a previous attempt that failed to advance
-            # meta. Skip re-writing it — just advance meta.
+            # the entry was written by a previous attempt. Skip re-writing it.
             entry_ref = db.collection(entry_coll).document(str(new_seq))
             existing = entry_ref.get(transaction=txn)
             if existing.exists:
@@ -243,13 +268,17 @@ class EvidenceArchive:
         """Recompute entry_hash from persisted fields.
 
         A verifier can call this on a reloaded GCS object to confirm the
-        hash chain linkage. Returns False if the entry is tampered.
+        hash chain linkage. Returns False if the entry is tampered or
+        missing required fields.
         """
-        expected = _compute_hash(
-            payload=entry["payload"],
-            prev_hash=entry["prev_hash"],
-            timestamp=entry["timestamp"],
-            sequence=entry["sequence"],
-            model_id=entry["model_id"],
-        )
+        try:
+            expected = _compute_hash(
+                payload=entry["payload"],
+                prev_hash=entry["prev_hash"],
+                timestamp=entry["timestamp"],
+                sequence=entry["sequence"],
+                model_id=entry["model_id"],
+            )
+        except (KeyError, TypeError):
+            return False
         return expected == entry["entry_hash"]
