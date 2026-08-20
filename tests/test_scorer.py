@@ -194,6 +194,16 @@ class TestVerdictValidation:
         verdict, _ = scorer.parse_verdict(raw)
         assert verdict == "ERROR-UNPARSED"
 
+    def test_non_string_class_rejected(self):
+        raw = '{"verdicts": [{"answer": 1, "class": 1, "rationale": "x"}]}'
+        verdict, _ = scorer.parse_verdict(raw)
+        assert verdict == "ERROR-UNPARSED"
+
+    def test_null_class_rejected(self):
+        raw = '{"verdicts": [{"answer": 1, "class": null, "rationale": "x"}]}'
+        verdict, _ = scorer.parse_verdict(raw)
+        assert verdict == "ERROR-UNPARSED"
+
 
 class TestCategoryNormalization:
     def test_lowercase_c_hits_scope_limit(self, firm):

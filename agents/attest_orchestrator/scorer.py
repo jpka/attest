@@ -124,9 +124,11 @@ def parse_verdict(raw: str) -> tuple[str, str]:
     """
     raw = raw.strip()
 
-    def _valid(class_name: str) -> str:
+    def _valid(class_name: object) -> str:
         """Normalize and validate a verdict class. Anything not in the
         allowlist collapses to ERROR-UNPARSED."""
+        if not isinstance(class_name, str):
+            return "ERROR-UNPARSED"
         normalized = class_name.strip().upper()
         return normalized if normalized in VALID_VERDICTS else "ERROR-UNPARSED"
 
