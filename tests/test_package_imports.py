@@ -13,7 +13,6 @@ covers the mechanism on any machine.
 
 from __future__ import annotations
 
-import importlib
 import subprocess
 import sys
 import textwrap
@@ -44,15 +43,18 @@ class TestLazyLoader:
         """A resolved name must become a plain attribute.
 
         If it stays unbound, every later lookup re-enters __getattr__ — which
-        is what made the recursion unbounded. Importing the submodule directly
-        binds the parent attribute as a side effect, so that binding is cleared
-        first to make sure __getattr__ is what does the work here.
+        is what made the recursion unbounded.
+
+        The binding is cleared first because a direct
+        ``importlib.import_module`` of the submodule sets the parent attribute
+        as a side effect: without the reset, this passes without ever calling
+        ``__getattr__``, so it would not test the loader at all.
         """
-        importlib.import_module("agents.attest_orchestrator.registry")
         vars(pkg).pop("registry", None)
         assert "registry" not in vars(pkg)
-        _ = pkg.registry
-        assert "registry" in vars(pkg)
+        resolved = pkg.registry  # goes through __getattr__
+        assert resolved is sys.modules["agents.attest_orchestrator.registry"]
+        assert "registry" in vars(pkg), "resolved module was not cached"
 
     def test_dir_lists_lazy_submodules(self):
         listed = dir(pkg)
