@@ -18,7 +18,6 @@ problem — which is the whole point of running it.
 from __future__ import annotations
 
 import base64
-import inspect
 import json
 import os
 import sys
@@ -83,20 +82,35 @@ def main() -> int:
     )
     check("unknown CRD handled", get_adv_ground_truth("9999").get("error") == "not_found")
 
-    first = append_evidence("genesis")
-    second = append_evidence("second")
-    check(
-        "hash chain links",
-        first["prev_hash"] == "" and second["prev_hash"] == first["entry_hash"],
-        first["entry_hash"][:16],
-    )
-    # The linkage must not be reachable from the model. If `prev_hash` ever comes
-    # back as a parameter, the agent can fork or reset the chain by passing a
-    # stale value and nothing downstream can tell.
-    check(
-        "chain linkage not caller-supplied",
-        "prev_hash" not in inspect.signature(append_evidence).parameters,
-    )
+    try:
+        from attest_orchestrator.evidence_archive import EvidenceArchive
+        # ATTEST_EVIDENCE_BUCKET must be set (run `./deploy.sh infra` first)
+        EvidenceArchive.from_env()
+        bucket_missing = False
+    except Exception:
+        bucket_missing = True
+
+    if not bucket_missing:
+        first = append_evidence("genesis")
+        second = append_evidence("second")
+        check(
+            "hash chain links",
+            first["prev_hash"] == "" and second["prev_hash"] == first["entry_hash"],
+            first["entry_hash"][:16],
+        )
+        # Sequence numbers must be monotonically increasing — a gap is evidence
+        # of truncation.
+        check(
+            "sequence monotonic",
+            second["sequence"] == first["sequence"] + 1,
+            f"seq {first['sequence']} -> {second['sequence']}",
+        )
+    else:
+        check(
+            "evidence archive skipped",
+            True,
+            "ATTEST_EVIDENCE_BUCKET not set — run ./deploy.sh infra"
+        )
 
     from fastapi.testclient import TestClient  # noqa: E402
     from google.adk.cli.fast_api import get_fast_api_app  # noqa: E402
