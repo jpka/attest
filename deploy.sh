@@ -260,25 +260,31 @@ print(doc["name"])
 
     # Poll. Parse with python3, not grep: an operation that finished with an
     # error must be reported as that error, not as a timeout.
+    #
+    # `|| rc=$?` is required, not defensive. Under `set -e` a failing command
+    # substitution aborts the script at the assignment, so a bare `rc=$?` on
+    # the next line never runs — the first not-yet-done poll (exit 3) would
+    # kill cmd_memory silently. stderr is folded into $parsed because that is
+    # where python3's sys.exit(message) text goes.
     local waited=0
     while (( waited < 200 )); do
       local op
       op="$(curl -s --fail-with-body -H "Authorization: Bearer ${token}" "${base}/${op_name}")" \
         || { echo "  poll request failed: $op"; return 1; }
-      local parsed rc
+      local parsed rc=0
       parsed="$(printf '%s' "$op" | python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
 if not doc.get("done"):
     sys.exit(3)
-if "error" in doc:
-    sys.exit(f"operation failed: {doc[\"error\"]}")
+err = doc.get("error")
+if err:
+    sys.exit("operation failed: " + json.dumps(err))
 name = doc.get("response", {}).get("name", "")
 if not name:
-    sys.exit(f"operation done but carried no engine name: {doc}")
+    sys.exit("operation done but carried no engine name: " + json.dumps(doc))
 print(name)
-')"
-      rc=$?
+' 2>&1)" || rc=$?
       if (( rc == 0 )); then
         engine_name="$parsed"
         break
