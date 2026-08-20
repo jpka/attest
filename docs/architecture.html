@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attest — surveillance architecture</title>
+<!-- No external resources: this file must render offline, with no network
+     dependency. Typography falls back to the platform monospace stack. -->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#020617; color:#e2e8f0;
+    font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+    padding:32px; min-height:100vh;
+  }
+  .wrap { max-width:1300px; margin:0 auto; }
+  header { margin-bottom:24px; }
+  .title { display:flex; align-items:center; gap:10px; }
+  .dot {
+    width:9px; height:9px; border-radius:50%; background:#34d399;
+    box-shadow:0 0 8px #34d399; animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.45;transform:scale(.8)} }
+  h1 { font-size:17px; font-weight:600; letter-spacing:.02em; color:#f1f5f9; }
+  .sub { font-size:11px; color:#94a3b8; margin-top:7px; line-height:1.65; }
+  .sub b { color:#cbd5e1; font-weight:500; }
+  .diagram {
+    border:1px solid #1e293b; border-radius:12px;
+    background:#020617; padding:8px; overflow:hidden;
+  }
+  svg { display:block; width:100%; height:auto; }
+  .cards {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:14px; margin-top:20px;
+  }
+  .card {
+    background:#0b1220; border:1px solid #1e293b;
+    border-radius:10px; padding:15px 16px;
+  }
+  .card-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .card-dot { width:7px; height:7px; border-radius:50%; }
+  .card-dot.violet { background:#a78bfa; box-shadow:0 0 7px #a78bfa; }
+  .card-dot.cyan   { background:#22d3ee; box-shadow:0 0 7px #22d3ee; }
+  .card-dot.rose   { background:#fb7185; box-shadow:0 0 7px #fb7185; }
+  .card h3 { font-size:11.5px; font-weight:600; color:#f1f5f9; letter-spacing:.02em; }
+  .card ul { list-style:none; }
+  .card li {
+    font-size:10px; color:#94a3b8; line-height:1.7;
+    padding-left:11px; text-indent:-11px; margin-bottom:5px;
+  }
+  .card li b { color:#cbd5e1; font-weight:500; }
+  footer {
+    margin-top:22px; padding-top:14px; border-top:1px solid #1e293b;
+    font-size:9.5px; color:#475569; display:flex; gap:18px; flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title"><span class="dot"></span><h1>Attest — surveillance architecture</h1></div>
+    <p class="sub">
+      An agent that audits LLM claims about SEC-registered investment advisers against Form ADV Part 1A ground truth.<br>
+      Built on <b>Google ADK</b> · <b>Cloud Run</b> · <b>Pub/Sub</b> · <b>Firestore</b> · <b>Cloud Storage</b> · <b>Vertex AI</b> · <b>Cloud Trace</b>
+    </p>
+  </header>
+
+  <div class="diagram">
+  <svg viewBox="0 0 1240 900" xmlns="http://www.w3.org/2000/svg" role="img"
+       aria-label="Attest architecture: Cloud Scheduler to Pub/Sub to an ADK agent on Cloud Run, with Firestore, Cloud Storage, Vertex AI and Cloud Trace.">
+    <defs>
+      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+      </pattern>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+      </marker>
+      <marker id="ar-rose" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb7185"/>
+      </marker>
+      <marker id="ar-amber" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
+      </marker>
+    </defs>
+
+    <rect width="1240" height="900" fill="url(#grid)"/>
+
+    <!-- ===== BOUNDARIES ===== -->
+    <!-- us-central1 region: everything regional lives inside. Vertex `global` does not. -->
+    <rect x="24" y="96" width="800" height="700" rx="12" fill="none"
+          stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.55"/>
+    <text x="40" y="88" font-size="9" fill="#fbbf24" letter-spacing="0.08em">REGION · us-central1</text>
+
+    <!-- Vertex `global` boundary — outside the region box, and holding ONLY the
+         subject model. The Memory Bank engine is regional and lives inside. -->
+    <rect x="864" y="110" width="352" height="140" rx="12" fill="none"
+          stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.55"/>
+    <text x="880" y="102" font-size="9" fill="#fbbf24" letter-spacing="0.08em">VERTEX AI · location = global</text>
+
+    <!-- IAM trust boundary around the two service identities -->
+    <rect x="48" y="640" width="752" height="132" rx="8" fill="none"
+          stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+    <text x="64" y="634" font-size="8" fill="#fb7185" letter-spacing="0.06em">IAM · least privilege, no project editor</text>
+
+    <!-- ===== ARROWS (early = behind components) ===== -->
+    <!-- Scheduler -> topic -->
+    <path d="M 172 190 L 172 232" stroke="#64748b" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <!-- topic -> subscription -->
+    <path d="M 172 292 L 172 334" stroke="#fb923c" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <!-- subscription -> Cloud Run trigger route -->
+    <path d="M 300 364 L 396 364" stroke="#64748b" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <text x="308" y="356" font-size="7.5" fill="#94a3b8">POST /trigger/pubsub</text>
+    <!-- push identity auth (security, dashed rose) -->
+    <path d="M 232 700 L 232 400 L 392 400" stroke="#fb7185" stroke-width="1"
+          stroke-dasharray="4,4" fill="none" marker-end="url(#ar-rose)"/>
+    <text x="240" y="392" font-size="7" fill="#fb7185">run.invoker</text>
+    <!-- runtime SA -> Cloud Run -->
+    <path d="M 560 700 L 560 508" stroke="#fb7185" stroke-width="1"
+          stroke-dasharray="4,4" fill="none" marker-end="url(#ar-rose)"/>
+    <text x="568" y="620" font-size="7" fill="#fb7185">runs as</text>
+    <!-- Cloud Run -> Vertex model (crosses the region boundary) -->
+    <path d="M 700 340 L 892 232" stroke="#fbbf24" stroke-width="1.3" fill="none" marker-end="url(#ar-amber)"/>
+    <text x="716" y="288" font-size="7.5" fill="#fbbf24">model calls</text>
+    <!-- Cloud Run -> Memory Bank engine (regional: stays inside the boundary) -->
+    <path d="M 548 508 L 548 528 L 200 528 L 200 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <text x="212" y="524" font-size="7.5" fill="#a78bfa">remember / recall</text>
+    <!-- Cloud Run -> Firestore -->
+    <path d="M 480 508 L 480 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <!-- Cloud Run -> GCS -->
+    <path d="M 640 508 L 640 540 L 700 540 L 700 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <!-- Cloud Run -> Trace/Logging -->
+    <path d="M 700 468 L 892 600" stroke="#64748b" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+    <text x="770" y="536" font-size="7.5" fill="#94a3b8">spans · logs · metrics</text>
+
+    <!-- ===== COMPONENTS ===== -->
+    <!-- Cloud Scheduler -->
+    <rect x="48" y="130" width="248" height="60" rx="6" fill="#0f172a"/>
+    <rect x="48" y="130" width="248" height="60" rx="6"
+          fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="62" y="152" font-size="12" font-weight="600" fill="#fde68a">Cloud Scheduler</text>
+    <text x="62" y="167" font-size="9" fill="#94a3b8">job attest-monthly</text>
+    <text x="62" y="181" font-size="8" fill="#64748b">cron 0 6 1 * * UTC · monthly, 1st @ 06:00</text>
+
+    <!-- Pub/Sub topic — message bus, sitting in the gap -->
+    <rect x="48" y="232" width="248" height="60" rx="6" fill="#0f172a"/>
+    <rect x="48" y="232" width="248" height="60" rx="6"
+          fill="rgba(251,146,60,0.3)" stroke="#fb923c" stroke-width="1.5"/>
+    <text x="62" y="254" font-size="12" font-weight="600" fill="#fed7aa">Pub/Sub topic</text>
+    <text x="62" y="269" font-size="9" fill="#94a3b8">attest-runs</text>
+    <text x="62" y="283" font-size="8" fill="#64748b">{"run":"monthly","crd":"900001"}</text>
+
+    <!-- Push subscription -->
+    <rect x="48" y="334" width="252" height="72" rx="6" fill="#0f172a"/>
+    <rect x="48" y="334" width="252" height="72" rx="6"
+          fill="rgba(251,146,60,0.3)" stroke="#fb923c" stroke-width="1.5"/>
+    <text x="62" y="356" font-size="12" font-weight="600" fill="#fed7aa">push subscription</text>
+    <text x="62" y="371" font-size="9" fill="#94a3b8">attest-runs-push</text>
+    <text x="62" y="385" font-size="8" fill="#64748b">ack deadline 600s</text>
+    <text x="62" y="398" font-size="8" fill="#64748b">retry backoff 60s → 600s</text>
+
+    <!-- ===== COMPUTE ===== -->
+    <rect x="396" y="308" width="304" height="200" rx="6" fill="#0f172a"/>
+    <rect x="396" y="308" width="304" height="200" rx="6"
+          fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+    <text x="410" y="330" font-size="12" font-weight="600" fill="#a7f3d0">Cloud Run · attest-orchestrator</text>
+    <text x="410" y="344" font-size="8" fill="#64748b">rev 00009-dpz · min 0 / max 3 · 1Gi · no-allow-unauthenticated</text>
+    <text x="410" y="360" font-size="9" fill="#94a3b8">Google ADK agent — root_agent attest_orchestrator</text>
+
+    <!-- the six model-reachable tools -->
+    <rect x="410" y="370" width="134" height="20" rx="4" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+    <text x="417" y="384" font-size="7.5" fill="#a5f3fc">get_adv_ground_truth</text>
+    <rect x="552" y="370" width="134" height="20" rx="4" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+    <text x="559" y="384" font-size="7.5" fill="#a5f3fc">list_covered_firms</text>
+    <rect x="410" y="396" width="134" height="20" rx="4" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+    <text x="417" y="410" font-size="7.5" fill="#a5f3fc">score_answer</text>
+    <rect x="552" y="396" width="134" height="20" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+    <text x="559" y="410" font-size="7.5" fill="#ddd6fe">append_evidence</text>
+    <rect x="410" y="422" width="134" height="20" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+    <text x="417" y="436" font-size="7.5" fill="#ddd6fe">remember_firm_finding</text>
+    <rect x="552" y="422" width="134" height="20" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+    <text x="559" y="436" font-size="7.5" fill="#ddd6fe">recall_firm_memory</text>
+
+    <!-- purge: exists in code, deliberately NOT attached -->
+    <rect x="410" y="452" width="276" height="24" rx="4" fill="rgba(136,19,55,0.4)"
+          stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="417" y="462" font-size="7" fill="#fda4af">purge_firm_memory — operator-only, NOT model-reachable</text>
+    <text x="417" y="472" font-size="6.5" fill="#94a3b8">a triggered run reaches tools with a payload the operator did not write</text>
+
+    <text x="410" y="492" font-size="8" fill="#64748b">--trace_to_cloud --otel_to_cloud · trigger_sources=pubsub</text>
+    <text x="410" y="503" font-size="7.5" fill="#64748b">6 tools attached, asserted by name — never by count</text>
+
+    <!-- ===== MODEL / global ===== -->
+    <rect x="892" y="130" width="296" height="102" rx="6" fill="#0f172a"/>
+    <rect x="892" y="130" width="296" height="102" rx="6"
+          fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="906" y="152" font-size="12" font-weight="600" fill="#fde68a">Vertex AI — subject model</text>
+    <text x="906" y="167" font-size="9" fill="#94a3b8">gemini-3.5-flash-lite</text>
+    <text x="906" y="184" font-size="8" fill="#fbbf24">location = global, not regional</text>
+    <text x="906" y="197" font-size="7" fill="#64748b">the 3.x generation 404s on every regional</text>
+    <text x="906" y="208" font-size="7" fill="#64748b">endpoint — verified us-central1, us-east5,</text>
+    <text x="906" y="219" font-size="7" fill="#64748b">us-west1, europe-west4 — and resolves only here</text>
+
+    <!-- Memory Bank engine — REGIONAL, so it is drawn inside the region box.
+         Only the subject model belongs in the `global` boundary. -->
+    <rect x="64" y="556" width="252" height="72" rx="6" fill="#0f172a"/>
+    <rect x="64" y="556" width="252" height="72" rx="6"
+          fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="76" y="576" font-size="11" font-weight="600" fill="#ddd6fe">Vertex AI Memory Bank</text>
+    <text x="76" y="589" font-size="8" fill="#94a3b8">reasoningEngine · us-central1</text>
+    <text x="76" y="602" font-size="7" fill="#a78bfa">regional — engines do not exist in global, so this</text>
+    <text x="76" y="611" font-size="7" fill="#a78bfa">cannot share the model's location variable</text>
+    <text x="76" y="622" font-size="6.5" fill="#64748b">gemini-2.5-flash · text-embedding-005 (required for retrieval)</text>
+
+    <!-- Observability -->
+    <rect x="892" y="556" width="296" height="88" rx="6" fill="#0f172a"/>
+    <rect x="892" y="556" width="296" height="88" rx="6"
+          fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+    <text x="906" y="578" font-size="12" font-weight="600" fill="#e2e8f0">Observability</text>
+    <text x="906" y="595" font-size="9" fill="#94a3b8">Cloud Trace — tool calls as spans</text>
+    <text x="906" y="610" font-size="9" fill="#94a3b8">Cloud Logging</text>
+    <text x="906" y="625" font-size="9" fill="#94a3b8">Cloud Monitoring</text>
+    <text x="906" y="637" font-size="7" fill="#64748b">the Agent Observability requirement, and how the 403s were found</text>
+
+    <!-- ===== STATE ===== -->
+    <!-- Firestore -->
+    <rect x="336" y="556" width="288" height="72" rx="6" fill="#0f172a"/>
+    <rect x="336" y="556" width="288" height="72" rx="6"
+          fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="350" y="578" font-size="12" font-weight="600" fill="#ddd6fe">Firestore · Native mode</text>
+    <text x="350" y="593" font-size="7.5" fill="#94a3b8">rosters/{version}/firms/{crd} — Battery Registry</text>
+    <text x="350" y="605" font-size="7.5" fill="#94a3b8">registry/current → 32a6587ad82b</text>
+    <text x="350" y="617" font-size="7.5" fill="#94a3b8">evidence_chain/meta — chain tail, advanced in a txn</text>
+
+    <!-- Cloud Storage -->
+    <rect x="640" y="556" width="160" height="72" rx="6" fill="#0f172a"/>
+    <rect x="640" y="556" width="160" height="72" rx="6"
+          fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="652" y="578" font-size="11" font-weight="600" fill="#ddd6fe">Cloud Storage</text>
+    <text x="652" y="592" font-size="7" fill="#94a3b8">attest-505313-evidence</text>
+    <text x="652" y="604" font-size="7" fill="#94a3b8">one immutable object</text>
+    <text x="652" y="615" font-size="7" fill="#94a3b8">per entry · uniform BLA</text>
+    <text x="652" y="625" font-size="6.5" fill="#a78bfa">ifGenerationMatch=0</text>
+
+    <!-- ===== IDENTITIES ===== -->
+    <rect x="64" y="656" width="240" height="100" rx="6" fill="#0f172a"/>
+    <rect x="64" y="656" width="240" height="100" rx="6"
+          fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+    <text x="78" y="678" font-size="11" font-weight="600" fill="#fda4af">attest-pubsub-push</text>
+    <text x="78" y="692" font-size="8" fill="#94a3b8">the Pub/Sub push identity</text>
+    <text x="78" y="710" font-size="8" fill="#cbd5e1">roles/run.invoker</text>
+    <text x="78" y="726" font-size="7" fill="#64748b">and nothing else — it exists only</text>
+    <text x="78" y="737" font-size="7" fill="#64748b">to invoke one Cloud Run service</text>
+    <text x="78" y="750" font-size="7" fill="#64748b">1 role</text>
+
+    <rect x="440" y="656" width="240" height="100" rx="6" fill="#0f172a"/>
+    <rect x="440" y="656" width="240" height="100" rx="6"
+          fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+    <text x="454" y="678" font-size="11" font-weight="600" fill="#fda4af">attest-runtime</text>
+    <text x="454" y="692" font-size="8" fill="#94a3b8">what the service runs as</text>
+    <text x="454" y="708" font-size="7" fill="#cbd5e1">datastore.user · aiplatform.user</text>
+    <text x="454" y="719" font-size="7" fill="#cbd5e1">cloudtrace.agent · logging.logWriter</text>
+    <text x="454" y="730" font-size="7" fill="#cbd5e1">monitoring.metricWriter</text>
+    <text x="454" y="741" font-size="7" fill="#cbd5e1">storage.objectCreator</text>
+    <text x="454" y="752" font-size="7" fill="#64748b">6 roles · create, never overwrite</text>
+
+    <!-- ===== LEGEND — outside every boundary. Lowest boundary ends at y=796. ===== -->
+    <text x="48" y="836" font-size="8" fill="#64748b" letter-spacing="0.08em">LEGEND</text>
+    <rect x="112" y="826" width="14" height="11" rx="3" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.2"/>
+    <text x="132" y="835" font-size="8" fill="#94a3b8">managed cloud</text>
+    <rect x="232" y="826" width="14" height="11" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.2"/>
+    <text x="252" y="835" font-size="8" fill="#94a3b8">compute</text>
+    <rect x="332" y="826" width="14" height="11" rx="3" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.2"/>
+    <text x="352" y="835" font-size="8" fill="#94a3b8">read tool</text>
+    <rect x="428" y="826" width="14" height="11" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+    <text x="448" y="835" font-size="8" fill="#94a3b8">state / write tool</text>
+    <rect x="568" y="826" width="14" height="11" rx="3" fill="rgba(251,146,60,0.3)" stroke="#fb923c" stroke-width="1.2"/>
+    <text x="588" y="835" font-size="8" fill="#94a3b8">message bus</text>
+    <rect x="692" y="826" width="14" height="11" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.2"/>
+    <text x="712" y="835" font-size="8" fill="#94a3b8">identity / security</text>
+    <path d="M 848 832 L 890 832" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4"/>
+    <text x="898" y="835" font-size="8" fill="#94a3b8">auth grant</text>
+    <path d="M 990 832 L 1032 832" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.6"/>
+    <text x="1040" y="835" font-size="8" fill="#94a3b8">location boundary</text>
+  </svg>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-header"><span class="card-dot violet"></span><h3>Evidence Archive</h3></div>
+      <ul>
+        <li>• Append-only <b>SHA-256 hash chain</b>. Each entry carries <b>payload_sha256</b>, <b>prev_hash</b>, a monotonic <b>sequence</b>, timestamp and model id.</li>
+        <li>• A pure chain detects edits but <b>not truncation</b> — dropping the last N entries leaves a valid chain. The sequence number closes that: a gap is evidence.</li>
+        <li>• The tail advances inside a <b>Firestore transaction with optimistic concurrency</b>, so two Cloud Run instances cannot fork the chain.</li>
+        <li>• The GCS object is written <b>after</b> the transaction commits, with <b>ifGenerationMatch=0</b>, so a retry is idempotent rather than a second entry.</li>
+        <li>• That ordering leaves a window: commit succeeds, object write fails. <b>reconcile_tail()</b> runs before every append and re-writes the missing object for an already-committed tail — it never rolls the chain back, because the entry may already have been reported and a content-addressed entry rewrites byte-identically or it is corruption. This is not hypothetical: entries 1–2 of the live chain have no object, because nothing reconciled before entry 3.</li>
+        <li>• The agent <b>cannot supply prev_hash</b>. The tool reads the tail itself; an earlier version took it as an argument, which let the model fork or reset the chain by passing a stale value.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-dot cyan"></span><h3>Battery Registry</h3></div>
+      <ul>
+        <li>• Ground truth is <b>not a file the agent ships with</b>. It is a content-addressed roster in Firestore.</li>
+        <li>• version = <b>sha256(json.dumps(roster, sort_keys=True))[:12]</b> — deliberately the same 12-char scheme as BATTERY_VERSION, so a roster version and a battery version are comparable strings.</li>
+        <li>• Immutable under its own name: editing the source produces a <b>new</b> version rather than mutating one. That is what makes "scored against roster <b>32a6587ad82b</b>" mean something a month later.</li>
+        <li>• <b>ATTEST_ROSTER_VERSION</b> pins a run; unset follows registry/current.</li>
+        <li>• <b>No fallback to the bundled JSON.</b> A missing roster raises. Silently scoring against a roster nobody chose is the exact failure this product exists to detect.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-dot rose"></span><h3>Least privilege</h3></div>
+      <ul>
+        <li>• <b>No project editor anywhere.</b> The runtime holds six narrow roles; <b>storage.objectCreator</b> is create-only, not overwrite.</li>
+        <li>• A <b>separate push identity</b> holds only run.invoker, and the service is <b>--no-allow-unauthenticated</b>.</li>
+        <li>• <b>purge is operator-only</b> — never attached to the agent. A Pub/Sub-triggered run reaches the tools with a payload the operator did not write.</li>
+        <li>• The purge filter is an interpolated <b>AIP-160</b> expression, so a CRD containing a quote could close the literal early and widen it. <b>_validate_crd</b> rejects non-numeric input at the single point the value enters.</li>
+        <li>• Published artefacts name <b>fictional firms only</b> — CRDs 900001–900005.</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <span>project attest-505313</span>
+    <span>region us-central1</span>
+    <span>roster 32a6587ad82b</span>
+    <span>generated 2026-08-20</span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,58 +1,140 @@
-# Attest — deploy path skeleton
+# Attest
 
-Cloud Scheduler → Pub/Sub → ADK agent on Cloud Run, with Firestore and Cloud Trace.
-This is the Aug 17 phase of `attest-replan-0816.md`: prove the deployment before building
-on it. It is deliberately thin. What it is *not* is the finished orchestrator.
+**A compliance agent that audits what a model claims about SEC-registered investment
+advisers — and records what it could not verify.**
 
-**Three of the five qualifying Google Cloud infrastructure services** named in the hackathon
-rules (Cloud Run, Pub/Sub, Firestore) plus the ADK agent framework requirement. Agent Engine
-is not required and is not used here.
+Ask a general-purpose model a factual question about a registered investment adviser and
+it will usually answer. Some of those answers are right. Some are confidently wrong in
+ways that matter to a compliance officer: a firm's disciplinary history, whether it is
+fee-only, how many of its representatives are also registered reps of a broker-dealer.
+Attest runs a fixed battery of those questions on a schedule, scores every answer against
+Form ADV Part 1A ground truth, and writes the result into an append-only hash-chained
+record.
 
-## What's verified vs what isn't
+The product's thesis is the part most demos skip: **it refuses to adjudicate what it
+cannot source, and it tells you which document it would have needed.** A scorer that
+returns a verdict for every question is easy to build and worthless to rely on.
 
-Verified in a sandbox against `google-adk==2.7.0`:
+Open [`docs/architecture.html`](docs/architecture.html) for the architecture diagram —
+a standalone file, no build step.
 
-- the agent and its three tools load, and the ADV lookup returns the right firm by CRD
-- the hash chain links (`prev_hash` of entry N equals `entry_hash` of entry N-1)
-- `get_fast_api_app(..., trigger_sources=["pubsub"])` registers
-  `POST /apps/{app_name}/trigger/pubsub`
-- a real Pub/Sub push envelope routes through that endpoint, decodes, loads the agent and
-  reaches the model call
+---
 
-**Not verified — you are the first to run these:** anything touching Google Cloud. The
-`gcloud` invocations in `deploy.sh` were written against current flags but never executed.
-Expect one or two to need adjusting; that is what today is for.
+## Google Cloud services used
 
-**Status after the Aug 18 deployment:** the full path (`./deploy.sh all`) runs end to end.
-Three adjustments were needed and are baked into `deploy.sh`:
+| Service | Role here |
+|---|---|
+| **Cloud Run** | the ADK agent, `--no-allow-unauthenticated`, min 0 / max 3 |
+| **Pub/Sub** | topic `attest-runs` + authenticated push subscription |
+| **Cloud Scheduler** | `attest-monthly`, `0 6 1 * *` UTC |
+| **Firestore** (Native) | Battery Registry, evidence-chain tail |
+| **Cloud Storage** | one immutable object per evidence entry |
+| **Vertex AI** | subject model `gemini-3.5-flash-lite`; Memory Bank reasoning engine |
+| **Cloud Trace / Logging / Monitoring** | agent tool calls as spans |
 
-- Cloud Build needs the default compute SA granted `roles/cloudbuild.builds.builder`, or
-  `gcloud run deploy --source` dies on the `run-sources` bucket with `PERMISSION_DENIED`
-  (added to `cmd_infra`).
-- `--trace_to_cloud`/`--otel_to_cloud` lazy-import the OTel GCP exporters at startup and the
-  container crashes before the port opens if they're absent — `requirements.txt` carries the
-  `google-adk[otel-gcp]` extras.
-- The model is served from a different location than the service runs in. `gemini-3.5-flash-lite`
-  404s on every *regional* Vertex endpoint (verified Aug 18 against `us-central1`, `us-east5`,
-  `us-west1`, `europe-west4`) but resolves on Vertex's **`global`** location, which is where the
-  3.x generation is published. So `deploy.sh` sets `GOOGLE_CLOUD_LOCATION=global` for model calls
-  while Cloud Run, Firestore and Pub/Sub stay in `$REGION`; `ATTEST_MODEL` stays
-  `gemini-3.5-flash-lite` on both surfaces. Overridable via `ATTEST_MODEL_LOCATION`.
-  An earlier revision of this file concluded 3.x was AI-Studio-only and pinned the container to
-  `gemini-2.5-flash-lite`; that would have run the battery on a different model generation than
-  the one every premise-test result was measured on.
-- A missing `roles/monitoring.metricWriter` shows up as a repeating
-  `Failed to export metrics batch code: 403` — granted in `cmd_infra` too.
+Built on the **Google Agent Development Kit** (`google-adk`). Agent Engine is not used.
+
+---
+
+## The one non-obvious thing about this deployment
+
+**The model is served from a different location than the service runs in.**
+
+`gemini-3.5-flash-lite` 404s on every *regional* Vertex endpoint — verified against
+`us-central1`, `us-east5`, `us-west1` and `europe-west4` — and resolves only on Vertex's
+**`global`** location, which is where the 3.x generation is published. So Cloud Run,
+Firestore, Pub/Sub and the Memory Bank engine stay in `$REGION` while
+`GOOGLE_CLOUD_LOCATION=global` for model calls.
+
+The Memory Bank engine cannot share that variable: reasoning engines are *regional*
+resources and do not exist in `global`. That is why `ATTEST_MEMORY_LOCATION` is separate
+from `ATTEST_MODEL_LOCATION` rather than one "location" setting.
+
+An earlier revision of this file concluded the 3.x models were AI-Studio-only and pinned
+the container to `gemini-2.5-flash-lite`. That would have run the battery on a different
+model generation than the one every premise-test result was measured on — the results
+would have looked fine and meant nothing.
+
+---
+
+## Spin it up
+
+### 0. Prerequisites
+
+```bash
+gcloud auth login
+gcloud config set project <your-project-id>
+export ATTEST_PROJECT=<your-project-id>
+export ATTEST_REGION=us-central1
+pip install google-adk google-cloud-firestore google-cloud-storage
+```
+
+`adk` must be on `$PATH` — `./deploy.sh deploy` shells out to it.
+
+### 1. Local first
+
+Running locally costs nothing but a model call and turns a Cloud Run failure into an
+infrastructure problem rather than an agent problem, which is the whole point of doing it.
+
+```bash
+export GOOGLE_API_KEY=<AI Studio key>
+gcloud auth application-default login   # ground truth is a Firestore read
+python publish_registry.py              # once, or after editing ground_truth.json
+python local_test.py
+```
+
+`publish_registry.py` is **not optional and must run first**. Ground truth lives in
+Firestore, not in the container, so an unpublished roster means `local_test.py` fails at
+the registry check rather than silently scoring against something else.
+
+### 2. Deploy
+
+```bash
+./deploy.sh apis      # enable services — once, ~2 min
+./deploy.sh infra     # service accounts, IAM, Pub/Sub topic, Firestore, GCS bucket
+./deploy.sh memory    # Memory Bank reasoning engine
+./deploy.sh deploy    # Cloud Build + Cloud Run, ~4 min
+./deploy.sh wire      # push subscription + Cloud Scheduler
+./deploy.sh smoke     # publish one message, tail the logs
+```
+
+`./deploy.sh all` runs the lot in that order. Every step is idempotent and safe to re-run:
+`infra` skips what exists, and `memory` reuses an engine by display name rather than
+accumulating duplicates.
+
+**Re-run `infra` after pulling changes, not just once.** It is the step that creates the
+GCS evidence bucket and grants `storage.objectCreator`. Those were added after `infra` had
+already been run successfully, so a deployment that skipped the re-run had a live service,
+green CI, and an Evidence Archive that 404'd on every append. See the note on this below.
+
+### 3. What "working" looks like
+
+`./deploy.sh smoke` should show, in the logs it tails:
+
+```
+INFO - evidence_archive.py:181 - evidence.append seq=3 hash=5c2a91abee001c66
+INFO:     "POST /apps/attest_orchestrator/trigger/pubsub HTTP/1.1" 200 OK
+```
+
+A `200` on the trigger route **and** an `evidence.append` line with a hash. The 200 alone
+is not sufficient — that is the failure mode described below.
+
+Then open Cloud Trace: the run appears as a trace with the agent's tool calls as spans.
+A `500` here is what Pub/Sub sees as a nack, so it will retry with backoff.
+
+---
 
 ## Layout
 
 ```
 agents/attest_orchestrator/
-    agent.py              root_agent + 3 tools
+    agent.py              root_agent + the six model-reachable tools
     registry.py           Battery Registry — content-addressed ground truth
     evidence_archive.py   append-only SHA-256 hash chain on Firestore + GCS
+    memory_bank.py        Vertex AI Memory Bank; purge stays operator-only
+    scorer.py             the v2 rubric
+    scorer_prompts.py     Part 1A scope limits, shared with the agent instruction
     ground_truth.json     fictionalized roster; the reviewable source
-    requirements.txt      extra deps (google-adk comes from the image)
 ingest/
     adv_schema.py         Form ADV Part 1A column map — the ground-truth schema
     select_firms.py       SEC bulk roster -> real selection (gitignored, never committed)
@@ -60,54 +142,8 @@ ingest/
 deploy.sh                 idempotent gcloud driver
 publish_registry.py       ground_truth.json -> Firestore
 local_test.py             run everything locally first
+tests/                    126 tests; ruff + pytest on every push and PR
 ```
-
-## Run it locally first
-
-```bash
-pip install google-adk google-cloud-firestore
-gcloud auth application-default login   # ground truth is a Firestore read
-python publish_registry.py              # once, or after editing ground_truth.json
-python local_test.py
-```
-
-All nine checks should pass. The last one makes a real model call.
-
-## Then deploy
-
-```bash
-# gcloud auth login - already done
-# gcloud config set project attest-505313
-# export ATTEST_PROJECT=attest-505313
-# export ATTEST_REGION=us-central1
-
-./deploy.sh apis      # ~2 min, once
-./deploy.sh infra     # service accounts, Pub/Sub topic, Firestore
-./deploy.sh deploy    # Cloud Build + Cloud Run, ~4 min
-./deploy.sh wire      # push subscription + Cloud Scheduler
-./deploy.sh smoke     # publish one message, tail the logs
-```
-
-`./deploy.sh all` does the lot. Every step is safe to re-run.
-
-## What "working" looks like
-
-`./deploy.sh smoke` should show a 200 on the trigger route and an `evidence.append` log line
-containing an `entry_hash`. Then open Cloud Trace — the run should appear as a trace with the
-agent's tool calls as spans. **Screenshot that now.** It is the Agent Observability evidence
-the demo video needs, and finding out in week three that tracing was never enabled is a bad
-day.
-
-## Cost
-
-Everything here sits inside Always Free: Cloud Run (2M requests/month), Firestore (1 GiB,
-50k reads/day), Pub/Sub (10 GiB/month), Cloud Scheduler (3 jobs per *billing account* — this
-uses one, so don't casually add more). Model calls run on `gemini-3.5-flash-lite` both
-locally (AI Studio) and deployed (Vertex, `global` location — see the adjustments above), so
-deployed runs stay comparable with the premise-test corpus. Vertex bills per token with no free
-tier; a full battery run is single-digit dollars against the $150 credit. Keep every high-volume
-loop on a `-flash-lite` model —
-`gemini-3.5-flash` is capped at 20 requests/day on free tier and will stall a batch run.
 
 ## The Battery Registry
 
@@ -121,64 +157,203 @@ registry/current                  pointer: {"roster_version": ...}
 ```
 
 `{version}` is `sha256(json.dumps(roster, sort_keys=True))[:12]` — deliberately the same
-twelve-character scheme as `BATTERY_VERSION` in `premise_test.py`, not a second one that looks
-similar. A roster version and a battery version are comparable strings and a run records both.
+twelve-character scheme as `BATTERY_VERSION`, not a second one that looks similar. A
+roster version and a battery version are comparable strings, and a run records both.
 
 Two properties fall out of content addressing. Republishing unchanged data is a no-op that
-lands on identical document paths, so the publisher is safe to re-run. And editing the source
-produces a *new* version rather than mutating one in place, so a roster is immutable under its
-own name — which is what makes "scored against roster 32a6587ad82b" a claim that means
-something a month later.
+lands on identical document paths, so the publisher is safe to re-run. And editing the
+source produces a *new* version rather than mutating one in place, so a roster is immutable
+under its own name — which is what makes "scored against roster `32a6587ad82b`" a claim
+that still means something a month later.
 
 `ATTEST_ROSTER_VERSION` pins a run to a specific roster. Unset means "follow
 `registry/current`", which is right for a scheduled run and wrong for re-scoring an old one.
 
-**No fallback to the bundled JSON.** A missing roster or missing credentials raises. An agent
-that silently reads some other ground truth produces a run that looks normal and is scored
-against a roster nobody chose — the exact failure mode this product exists to detect.
+**No fallback to the bundled JSON.** A missing roster or missing credentials raises. An
+agent that silently reads some other ground truth produces a run that looks normal and is
+scored against a roster nobody chose — the exact failure mode this product exists to detect.
 
-**The committed roster is fictionalized.** The firm identities in `ground_truth.json` — names,
-CRDs, SEC numbers, addresses, websites — are synthetic. The quantitative record shapes come
-from real SEC registrants, so the scorer still tests realistic records. `select_firms.py`'s
-output never enters the repo (gitignored). That is what lets this repository go public on
-Aug 28 without naming a real firm.
+## The Evidence Archive
 
-Residual re-identification risk is acknowledged: the quantitative values are real Form ADV
-figures, and a reader with the public SEC bulk roster could in principle link them back to
-the originating registrant. Identities are fictionalized, not the values — the values are what
-the scorer compares a model's claims against, and the submission's findings were measured on
-these exact record shapes. The public repo never names a real firm.
+Firestore + Cloud Storage, not an in-process dict. Each entry carries `payload_sha256`,
+`prev_hash`, a monotonic `sequence`, a timestamp and the model id, so any retroactive edit
+is detectable.
 
-## Design notes carried forward
+A pure hash chain detects edits but not **truncation** — dropping the last N entries leaves
+a valid chain. The sequence number closes that: a gap is evidence. The tail lives in
+Firestore at `evidence_chain/meta` and is advanced inside a transaction with optimistic
+concurrency, so two Cloud Run instances cannot fork the chain. The payload is written to
+GCS *after* the transaction commits, with `if_generation_match=0`, so a retry is idempotent
+rather than a second entry.
 
-**Ground truth is keyed by CRD, never by name.** The SEC roster contains distinct firms sharing
-a primary business name; name-keying silently merges them. Four of the surviving premise-test
-findings are models confusing exactly these entities.
+**That ordering leaves a window, and it is closed explicitly.** Firestore commits first on
+purpose — writing GCS first would orphan an object whose entry never joined the chain, with
+no tail to reconcile it against. But it means a failure between the two steps leaves a
+committed entry and an advanced tail with no durable object behind it, and the next append
+would read that tail, succeed, and bury the gap one entry deeper.
 
-**`append_evidence` is now Firestore + GCS**, not an in-process dict. Each entry carries `sha256(payload)`, `prev_hash`, a monotonic `sequence` number, timestamp and model id, so any retroactive edit is detectable. A pure hash chain detects edits but not *truncation* — dropping the last N entries leaves a valid chain. The sequence number closes that: a gap is evidence of truncation. The tail is stored in Firestore `evidence_chain/meta` and advanced inside a transaction with optimistic concurrency — two Cloud Run instances cannot fork the chain. The payload is written to GCS after the transaction commits, so the chain never advances without a durable object backing it.
+`reconcile_tail()` runs before every append: if the tail's object is missing, it re-writes
+**that same committed entry** rather than rolling the chain back. Rolling back would retract
+a hash that may already have been reported to a caller, and because entries are
+content-addressed, a re-write is either byte-identical or it is corruption — nothing is
+invented. It refuses loudly rather than guessing when the tail names a sequence with no entry
+document, when the entry's own `sequence` disagrees with its document id, when the entry fails
+its own verification, or when an object already sitting at the path is not the committed entry.
 
-The agent cannot supply the linkage. `append_evidence` takes only a payload; it reads the tail itself and computes `prev_hash`. The earlier version accepted `prev_hash` as a tool argument, which let the model fork or reset the chain by passing a stale value — undetectable downstream, and the exact failure the product exists to prevent. `local_test.py` asserts the parameter stays gone.
+**`if_generation_match=0` is overwrite protection, not request idempotency, and the
+difference matters.** It guarantees an existing object is never silently replaced. It does not
+make a *retried call* a no-op: after Firestore commits and the GCS write fails, retrying
+`append` repairs the prior object and then appends a **second entry**, because nothing in the
+request identifies it as the same logical append. Genuine end-to-end idempotency needs a
+durable client-supplied request id, which this does not have. What is guaranteed is narrower
+and stated deliberately: **no entry is ever lost or overwritten, and no gap survives the next
+append.** A duplicate entry for a retried request is possible; a silently altered or missing
+one is not.
 
-**Memory Bank stays separate from the archive.** Memory Bank is the agent's working memory:
-semantic, mutable. The Evidence Archive is the legal record: append-only, hash-chained, never
-rewritten. Conflating them is the obvious mistake and the separation is the point of the
-product — a compliance record an agent can freely edit is not a record.
+This is not a hypothetical window. Entries 1 and 2 of the live chain exist in Firestore with
+no GCS object, permanently, because the bucket did not exist when they were written and
+nothing reconciled before entry 3 was appended. See the note further down.
 
-**The agent's instruction already carries the Part 1A scope limits** from `scorer_prompt_v2.py`.
-Those limits are why the premise-test findings survive audit; they belong everywhere a model
-touches ADV data, not only in the Scorer.
+**The agent cannot supply the linkage.** `append_evidence` takes only a payload; it reads
+the tail itself and computes `prev_hash`. An earlier version accepted `prev_hash` as a tool
+argument, which let the model fork or reset the chain by passing a stale value —
+undetectable downstream, and precisely the failure the product exists to prevent.
+`local_test.py` asserts the parameter stays gone.
 
-## Next
+## Memory Bank stays separate from the archive
 
-Aug 18 ✅: ADV ingestion — the pipeline now runs in two steps: `select_firms.py` selects real
-firms from the SEC bulk roster, and `anonymize.py` fictionalizes their identities before
-`ground_truth.json` is written. The committed roster `32a6587ad82b` is fictionalized and
-regenerates identically from the 2026-08-11 SEC release followed by the deterministic
-positional anonymization. A Firestore publish is now required after merge — the old pointer in
-`registry/current` still names the pre-anonymization roster. The pipeline, reproducibility
-notes and the known `is_fee_only` limitation (tracked for the Scorer phase) are in
-`ingest/README.md`. The registry layout does not change; only what feeds `ground_truth.json`
-does.
+Memory Bank is the agent's working memory: semantic, mutable, consolidating. The Evidence
+Archive is the legal record: append-only, hash-chained, never rewritten. Conflating them is
+the obvious mistake, and keeping them apart is the point of the product — **a compliance
+record an agent can freely edit is not a record.**
 
-Aug 20: run the probe battery through the deployed runtime via Pub/Sub, recording both the
-roster version and `BATTERY_VERSION` on each run.
+`purge_firm_memory` exists and is **not attached to the agent.** A Pub/Sub-triggered run
+reaches `root_agent.tools` with a payload the operator did not write, and a purge with
+`dry_run=False` deletes every memory for a firm. It is operator-only, the agent instruction
+states the model has no delete tool, and `local_test.py` asserts the absence rather than
+trusting the tool list to stay correct. It also defaults to `dry_run=True`, because the
+Vertex `purge` API treats `force: false` as a dry run that reports a count and deletes
+nothing.
+
+## Design notes
+
+**Ground truth is keyed by CRD, never by name.** The SEC roster contains distinct firms
+sharing a primary business name; name-keying silently merges them. Four of the surviving
+premise-test findings are models confusing exactly these entities.
+
+**The agent's instruction carries the Part 1A scope limits** from `scorer_prompts.py`. Those
+limits are why the findings survive audit; they belong everywhere a model touches ADV data,
+not only in the scorer.
+
+---
+
+## Stated limits
+
+These are scope boundaries, not bugs, and each one is deliberate.
+
+**Category C — fees and account minimums — returns UNVERIFIABLE by construction.** Fee
+schedules and account minimums live in **ADV Part 2A**, and the ground-truth layer here
+ingests Part 1A only. The scorer therefore cannot adjudicate a fee-rate claim, and rather
+than guessing it returns UNVERIFIABLE and **names Part 2A as the document it would have
+needed.** Ingesting Part 2A brochures was scoped and deliberately rejected: it was new scope
+on a schedule that reserved against new scope, and "this scorer refuses to adjudicate what
+it cannot source" is the thesis rather than an apology for a thin category.
+
+**`is_fee_only` is derived, and derived conservatively.** `ingest/README.md` documents the
+cases where the Part 1A columns do not settle the question.
+
+**Five firms, not five hundred.** The roster is deliberately small enough to be reviewed by
+hand. The scoring machinery does not care about the count.
+
+---
+
+## Data provenance and the research pack
+
+**Nothing published here names a real firm.**
+
+The firm identities in `ground_truth.json` — names, CRDs, SEC numbers, addresses, websites —
+are **synthetic**. The roster covers CRDs `900001`–`900005`, which are not assigned to any
+registrant. Everything in this repository, the demo video and every screenshot uses those
+fictional firms.
+
+**What is real is the shape of the records.** The quantitative values — AUM, employee and
+representative counts, client-type breakdowns, disciplinary-item structure — are taken from
+real Form ADV Part 1A filings in the SEC's public bulk roster release of 2026-08-11. They
+are real because they are what the scorer compares a model's claims against; a synthetic
+distribution would make the findings untestable. `select_firms.py` performs the real
+selection and its output is **gitignored and never committed**; `anonymize.py` applies a
+deterministic positional fictionalization before `ground_truth.json` is written. The
+committed roster `32a6587ad82b` regenerates identically from that SEC release followed by
+that anonymization.
+
+**Residual re-identification risk, acknowledged plainly.** The quantitative values are real
+Form ADV figures, so a reader holding the same public bulk roster could in principle link a
+record back to the originating registrant. Identities are fictionalized; the values are not.
+Form ADV Part 1A is public record — including Item 11 disciplinary disclosure — so this is
+not confidential data and there is no disclosure obligation attached to it. The rule being
+kept is a self-imposed one: **a compliance product should not make an unsolicited
+disciplinary claim about a named real adviser**, least of all in a demo. That rule is why
+the published history was rewritten to remove real registrant identifiers before this
+repository was made public, and why the pre-publication check sweeps the full reachable
+history by content rather than re-checking the files someone expected to be affected.
+
+**The research pack** — the premise-test corpus, the regrade report and the ADV ingestion
+review — stays in a private repository. It contains real registrant data, including a real
+firm's Item 11 disciplinary disclosure, and is the evidence base the findings were measured
+on. It is available on request for judging.
+
+---
+
+## A failure this repo learned the hard way
+
+`deploy.sh infra` gained the GCS bucket creation and the `storage.objectCreator` grant when
+the Evidence Archive shipped — several days *after* `infra` had last been run. Nothing
+re-ran it. The result:
+
+- CI green. 113 tests passing, including 16 for the archive, all against fakes.
+- `bash -n deploy.sh` clean.
+- Cloud Run live and serving.
+- Every `append_evidence` call 404ing on `The specified bucket does not exist`, and the
+  Pub/Sub trigger returning 500 — for the one component the plan called "never cut."
+
+The tests were right, the script was right, and the deployment was broken, because the tests
+mocked the bucket and the script had not been executed since the code that needed the bucket
+was written. Two related lessons, both earned rather than assumed:
+
+**A script that parses is not a script that has run.** An earlier version of `cmd_memory`
+passed `bash -n` and could not survive its own first loop iteration: under `set -e` a failing
+command substitution aborts at the assignment, so the `rc=$?` meant to catch a not-yet-done
+poll was unreachable. Underneath that sat a second defect it was hiding — an f-string
+expression containing a backslash, a `SyntaxError` on Python 3.11. Each bug concealed the
+other, and the operator-visible symptom was a timeout message for a compile error.
+
+**Idempotent means "safe to re-run," which is only useful if you actually re-run it.** Every
+step here is idempotent by design. That property bought nothing while nobody exercised it.
+
+Both are now verified by execution rather than by reading: `apis`, `infra`, `memory`,
+`deploy`, `wire` and `smoke` have each been run end to end against the live project, and the
+hash chain has been read back out of Firestore and Cloud Storage — `prev_hash` of entry 4
+equals `entry_hash` of entry 3, and the Firestore tail agrees with both.
+
+**And it left a permanent scar, which is the useful part.** Reading the two stores side by
+side shows Firestore holding entries 1, 2, 3, 4 and Cloud Storage holding only `3.json` and
+`4.json`. Entries 1 and 2 committed during the window when the bucket did not exist; their
+payload objects were never written and cannot be reconstructed, because the only durable copy
+was the one that failed. The chain still verifies — the hashes link and the sequence has no
+gap — which is exactly what makes it worth stating plainly rather than quietly renumbering:
+**a hash chain proves nothing was altered, not that everything was stored.**
+
+That is the concrete case for `reconcile_tail()`, which now runs before every append and
+would have caught this at entry 2 instead of leaving it for a code review to find at entry 4.
+
+---
+
+## Cost
+
+Everything outside the model calls sits inside Always Free: Cloud Run (2M requests/month),
+Firestore (1 GiB, 50k reads/day), Pub/Sub (10 GiB/month), Cloud Storage (5 GiB), Cloud
+Scheduler (3 jobs per *billing account* — this uses one, so don't casually add more).
+
+Vertex bills per token with no free tier; a full battery run is single-digit dollars. Keep
+every high-volume loop on a `-flash-lite` model — `gemini-3.5-flash` is capped at 20
+requests/day on free tier and will stall a batch run.

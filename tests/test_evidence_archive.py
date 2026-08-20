@@ -41,9 +41,31 @@ def _independent_hash(payload, prev_hash, timestamp, sequence, model_id):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _mock_gcs():
+def _mock_gcs(store: dict | None = None):
+    """A bucket that actually stores what is uploaded.
+
+    Reconciliation compares the object's bytes against the committed entry, so
+    a bucket whose download_as_text() returns a MagicMock cannot exercise that
+    path — it fails for the wrong reason. This keeps a dict of path -> content.
+    """
+    store = {} if store is None else store
     bucket = MagicMock()
-    bucket.blob.return_value = MagicMock()
+
+    def blob_for(path):
+        blob = MagicMock()
+        blob.exists.side_effect = lambda: path in store
+
+        def upload(content, **kw):
+            if kw.get("if_generation_match") == 0 and path in store:
+                raise RuntimeError("412 conditionNotMet")
+            store[path] = content
+
+        blob.upload_from_string.side_effect = upload
+        blob.download_as_text.side_effect = lambda: store[path]
+        return blob
+
+    bucket.blob.side_effect = blob_for
+    bucket._store = store
     return bucket
 
 
@@ -98,6 +120,18 @@ def _make_tx_pair():
     def make_entry_ref(seq):
         ref = MagicMock()
         ref.id = str(seq)
+
+        # Non-transactional read, used by reconcile_tail. Serve it from the
+        # same state the fake transaction writes to, or the recovery path
+        # sees MagicMock attributes instead of the entry it just committed.
+        def get(transaction=None):
+            snap = MagicMock()
+            key = int(seq)
+            snap.exists = key in state["entries"]
+            snap.to_dict = lambda: dict(state["entries"].get(key, {}))
+            return snap
+
+        ref.get = get
         return ref
 
     db.collection.return_value.document.side_effect = lambda name: (
@@ -381,3 +415,308 @@ def test_from_env_requires_bucket(monkeypatch):
             sys.modules["google.cloud.storage"] = old_storage
         else:
             sys.modules.pop("google.cloud.storage", None)
+
+
+class TestAppendEvidenceToolSignature:
+    """The tool must not let the model supply chain linkage.
+
+    An earlier version of `append_evidence` accepted `prev_hash` as a tool
+    argument. That let the model fork or reset the chain by passing a stale
+    value — undetectable downstream, and precisely the failure the Evidence
+    Archive exists to prevent. The fix was to have the tool read the tail
+    itself; nothing asserted it stayed that way, so this is that assertion.
+
+    Read with `ast` rather than by importing: `agent.py` needs `google.adk`,
+    which the generated Dockerfile installs and CI does not, so an
+    import-based check here would be skipped on exactly the machines that run
+    it. Re-adding the parameter is a source-level mistake and this catches it
+    at the source.
+    """
+
+    def _signature_params(self) -> list[str]:
+        import ast
+        import pathlib
+
+        src = pathlib.Path("agents/attest_orchestrator/agent.py").read_text()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.FunctionDef) and node.name == "append_evidence":
+                args = node.args
+                assert not args.vararg, "no *args on a tool signature"
+                assert not args.kwarg, "no **kwargs on a tool signature"
+                return [a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
+        raise AssertionError("append_evidence not found in agent.py")
+
+    def test_takes_only_payload(self):
+        params = self._signature_params()
+        assert params == ["payload"], (
+            f"append_evidence must take only 'payload'; got {params}. "
+            "Chain linkage is read from the tail, never supplied by the caller."
+        )
+
+    def test_prev_hash_is_not_a_parameter(self):
+        assert "prev_hash" not in self._signature_params(), (
+            "prev_hash is back as a tool argument — the model can fork or reset "
+            "the chain by passing a stale value."
+        )
+
+
+
+class TestPostCommitGCSFailureIsRecoverable:
+    """The window between the Firestore commit and the GCS write.
+
+    `append` commits the entry and advances the tail, then writes the object.
+    If the second step fails — process death, or a bucket that is not there —
+    Firestore holds a committed entry with no durable object, and the *next*
+    append reads that advanced tail, succeeds, and buries the gap one entry
+    deeper where nothing will look for it.
+
+    Not hypothetical. `deploy.sh infra` gained the bucket-creation step days
+    after `infra` had last been run, so the deployed archive spent four days
+    committing to Firestore and 404ing on GCS. Entries 1 and 2 of the live
+    chain exist in Firestore with no object, permanently, because nothing
+    reconciled before entry 3 was appended.
+
+    `reconcile_tail` closes it: re-write the same committed entry, never roll
+    the chain back. The entry may already have been reported to a caller, so
+    retracting its hash is worse than repairing it.
+    """
+
+    def test_gcs_failure_after_commit_leaves_a_committed_entry(self):
+        """Establish the hazard: the commit survives, the object does not."""
+        db, state, transactional = _make_tx_pair()
+        bucket = MagicMock()
+        blob = MagicMock()
+        blob.exists.return_value = False
+        blob.upload_from_string.side_effect = RuntimeError("bucket does not exist")
+        bucket.blob.return_value = blob
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+
+        with pytest.raises(RuntimeError, match="bucket does not exist"):
+            archive.append("genesis", "gemini-3.5-flash-lite")
+
+        # Firestore committed even though the caller saw an exception.
+        assert 1 in state["entries"]
+        assert state["meta"]["sequence"] == 1
+
+    def test_next_append_reconciles_the_missing_object(self):
+        store = {}
+        db, _state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+
+        first = archive.append("genesis", "gemini-3.5-flash-lite")
+        # Simulate the post-commit failure: entry 1 committed, object lost.
+        del store["evidence/1.json"]
+
+        second = archive.append("second", "gemini-3.5-flash-lite")
+
+        # Presence is the weaker claim, and asserting only presence is the same
+        # mistake this whole class is about: a faulty recovery that wrote
+        # *something* to the path would pass. Assert the restored object is the
+        # committed entry.
+        assert "evidence/1.json" in store, "entry 1's object was not rewritten"
+        restored = json.loads(store["evidence/1.json"])
+        assert restored == first, "reconcile wrote something other than entry 1"
+        assert archive.verify_entry(restored)
+        assert second["prev_hash"] == first["entry_hash"]
+        assert second["sequence"] == 2
+
+    def test_reconcile_is_a_noop_when_the_object_is_present(self):
+        db, _state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        assert archive.reconcile_tail() is None
+
+    def test_reconcile_is_a_noop_on_an_empty_chain(self):
+        db = MagicMock()
+        meta_ref = MagicMock()
+        meta_ref.id = "meta"
+        meta_ref.get.return_value.exists = False
+        db.collection.return_value.document.return_value = meta_ref
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=lambda fn: fn)
+
+        assert archive.reconcile_tail() is None
+
+    def test_reconcile_rejects_a_divergent_object_at_the_expected_path(self):
+        """An object at the right path is not proof of the right object.
+
+        A self-valid entry for some *other* payload can sit at
+        evidence/{seq}.json. Accepting it because the path is occupied would
+        report a successful repair while Firestore and GCS disagree about what
+        entry 1 says — which is the one thing the archive exists to rule out.
+        """
+        store = {}
+        db, _state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        # Replace the object with a different, internally consistent entry.
+        ts = "2026-08-20T16:00:00+00:00"
+        other = {
+            "entry_hash": _independent_hash("tampered", "", ts, 1, "m"),
+            "prev_hash": "",
+            "timestamp": ts,
+            "sequence": 1,
+            "payload": "tampered",
+            "payload_sha256": hashlib.sha256(b"tampered").hexdigest(),
+            "model_id": "m",
+        }
+        store["evidence/1.json"] = json.dumps(other, sort_keys=True)
+
+        with pytest.raises(RuntimeError, match="does not match the committed entry"):
+            archive.reconcile_tail()
+
+    def test_reconcile_rejects_an_entry_whose_sequence_disagrees(self):
+        """Document ID and entry sequence must agree.
+
+        `verify_entry` hashes `entry["sequence"]`, never the document ID, so a
+        self-valid entry stored at document 1 while claiming sequence 2 passes
+        both the tail-hash and self-verification checks. The object path is
+        derived from the entry, so repairing it would write evidence/2.json,
+        leave evidence/1.json absent, and report success.
+        """
+        db, state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+
+        ts = "2026-08-20T16:00:00+00:00"
+        # Self-consistent entry that declares sequence 2 ...
+        entry = {
+            "entry_hash": _independent_hash("payload", "", ts, 2, "m"),
+            "prev_hash": "",
+            "timestamp": ts,
+            "sequence": 2,
+            "payload": "payload",
+            "payload_sha256": hashlib.sha256(b"payload").hexdigest(),
+            "model_id": "m",
+        }
+        # ... stored at document 1, with the tail naming sequence 1.
+        state["entries"][1] = entry
+        state["meta"] = {"tail_hash": entry["entry_hash"], "sequence": 1}
+
+        with pytest.raises(RuntimeError, match="declares sequence 2"):
+            archive.reconcile_tail()
+
+    def test_reconcile_refuses_when_the_entry_document_is_absent(self):
+        """A tail naming a sequence with no entry is not a partial write.
+
+        Re-writing would mean inventing the entry's contents. An archive that
+        fabricates a record to close a gap is worse than one that reports it.
+        """
+        db, state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+        state["meta"] = {"tail_hash": "a" * 64, "sequence": 1}
+
+        with pytest.raises(RuntimeError, match="no entry document exists"):
+            archive.reconcile_tail()
+
+
+def test_precondition_failure_with_different_self_valid_content_raises():
+    """A 412 does not license accepting whatever is already there.
+
+    `if_generation_match=0` fails when an object exists. The handler then reads
+    it to decide whether this is an idempotent retry. `verify_entry` alone only
+    proves that object is internally consistent — a self-valid entry for a
+    different payload passes it, so the retry would be reported as successful
+    while GCS holds something else. The entries themselves must match.
+    """
+    db, _state, transactional = _make_tx_pair()
+    ts = "2026-08-20T16:00:00+00:00"
+    other = {
+        "entry_hash": _independent_hash("different", "", ts, 1, "m"),
+        "prev_hash": "",
+        "timestamp": ts,
+        "sequence": 1,
+        "payload": "different",
+        "payload_sha256": hashlib.sha256(b"different").hexdigest(),
+        "model_id": "m",
+    }
+    # Pre-seed the path so the immutable write hits its precondition.
+    store = {"evidence/1.json": json.dumps(other, sort_keys=True)}
+    archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+
+    with pytest.raises(RuntimeError, match="exists with different content"):
+        archive.append("payload", "gemini-3.5-flash-lite")
+
+
+class TestReconcileUnderWriteOnlyIdentity:
+    """reconcile_tail needs READ access, which appending does not imply.
+
+    `roles/storage.objectCreator` permits `create` and denies `objects.get`, so
+    the existence probe 403s under precisely the least-privilege posture this
+    project argues for. Revision 00011-wzd shipped that way and returned 500 on
+    every Pub/Sub delivery: the recovery code added to protect the archive took
+    the archive down.
+
+    `cmd_infra` now grants objectViewer too, so the probe works. This class
+    pins the fallback for when it does not — a denied probe must not fail the
+    append. An archive that refuses to record evidence because it cannot audit
+    itself has picked the worse of the two failures.
+    """
+
+    def _forbidden(self, message: str):
+        exc = Exception(message)
+        exc.code = 403
+        return exc
+
+    def test_denied_probe_skips_reconciliation_without_failing_append(self):
+        db, state, transactional = _make_tx_pair()
+        store = {}
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+
+        first = archive.append("genesis", "gemini-3.5-flash-lite")
+        del store["evidence/1.json"]
+
+        # The identity now loses read access: a fresh bucket whose existence
+        # probe 403s but whose writes still succeed. Building it separately
+        # avoids wrapping the previous mock's own side_effect, which recurses.
+        denied = _mock_gcs(store)
+        inner = denied.blob.side_effect
+        forbidden = self._forbidden(
+            "403 GET .../evidence%2F1.json: attest-runtime@... does not have "
+            "storage.objects.get access"
+        )
+
+        def blob_denied(path):
+            blob = inner(path)
+            blob.exists.side_effect = forbidden
+            return blob
+
+        denied.blob.side_effect = blob_denied
+        archive._bucket = denied
+
+        # The append must still succeed — this is the regression.
+        second = archive.append("second", "gemini-3.5-flash-lite")
+        assert second["sequence"] == 2
+        assert second["prev_hash"] == first["entry_hash"]
+        # And the new entry is still durably written.
+        assert "evidence/2.json" in store
+
+    def test_denied_probe_returns_none_rather_than_raising(self):
+        db, _state, transactional = _make_tx_pair()
+        bucket = _mock_gcs()
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        blob = bucket.blob("evidence/1.json")
+        blob.exists.side_effect = self._forbidden("403 Permission denied")
+        bucket.blob.side_effect = lambda p: blob
+
+        assert archive.reconcile_tail() is None
+
+    def test_a_non_permission_error_still_propagates(self):
+        """Only 403 is tolerated. Everything else is a real fault.
+
+        Swallowing every probe failure would turn 'the bucket is gone' into a
+        silent skip, which is the bug this PR started from.
+        """
+        db, _state, transactional = _make_tx_pair()
+        bucket = _mock_gcs()
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        blob = bucket.blob("evidence/1.json")
+        blob.exists.side_effect = RuntimeError("connection reset")
+        bucket.blob.side_effect = lambda p: blob
+
+        with pytest.raises(RuntimeError, match="connection reset"):
+            archive.reconcile_tail()

@@ -312,6 +312,11 @@ class TestVertexAPIError:
 class TestCRDValidation:
     """CRD validation is what keeps the interpolated purge filter safe."""
 
+    # Every literal here must be a roster CRD or an obviously synthetic one.
+    # A short real registrant CRD (38, 70, 319, ...) would be functionally
+    # identical as a validation fixture and would put a real CRD back into the
+    # published history — which is exactly what §2a/§2c of the plan exist to
+    # keep out. "7" carries the same "short numeric string" test intent.
     @pytest.mark.parametrize("value", ["900001", " 900001 ", "7"])
     def test_accepts_numeric(self, value):
         assert _validate_crd(value) == value.strip()
