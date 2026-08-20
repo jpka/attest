@@ -247,4 +247,4 @@ def test_committed_roster_version():
 
     path = ROOT / "agents" / "attest_orchestrator" / "ground_truth.json"
     firms = json.loads(path.read_text(encoding="utf-8"))
-    assert registry.content_version(firms) == "32a6587ad82b"
+    assert registry.content_version(firms) == "f4ae1f08aedd"
