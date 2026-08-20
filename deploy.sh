@@ -99,8 +99,9 @@ cmd_infra() {
     --member "serviceAccount:${RUNTIME_SA_EMAIL}" --role roles/storage.objectCreator \
     --quiet >/dev/null
   echo "  granted storage.objectCreator to ${RUNTIME_SA_EMAIL}"
-  # Export so the deploy step picks it up
-  EVIDENCE_BUCKET="$bucket"
+  # CR: export for the deploy step — but cmd_deploy also computes this
+  # from $PROJECT, so a standalone ./deploy.sh deploy works without infra.
+  export ATTEST_EVIDENCE_BUCKET="$bucket"
 }
 
 cmd_deploy() {
@@ -109,8 +110,8 @@ cmd_deploy() {
   # --trace_to_cloud + --otel_to_cloud give the Agent Observability requirement.
   # Everything after -- is passed straight to `gcloud run deploy`.
   local env_vars="GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${MODEL_LOCATION},ATTEST_MODEL=${MODEL}"
-  if [[ -n "${EVIDENCE_BUCKET:-}" ]]; then
-    env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${EVIDENCE_BUCKET}"
+  if [[ -n "${ATTEST_EVIDENCE_BUCKET:-}" ]]; then
+    env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${ATTEST_EVIDENCE_BUCKET}"
   fi
   adk deploy cloud_run \
     --project "$PROJECT" \

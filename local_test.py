@@ -82,13 +82,17 @@ def main() -> int:
     )
     check("unknown CRD handled", get_adv_ground_truth("9999").get("error") == "not_found")
 
+    # CR: only skip when the bucket is absent — let other init failures fail.
     try:
         from attest_orchestrator.evidence_archive import EvidenceArchive
-        # ATTEST_EVIDENCE_BUCKET must be set (run `./deploy.sh infra` first)
+
         EvidenceArchive.from_env()
         bucket_missing = False
-    except Exception:
-        bucket_missing = True
+    except RuntimeError as exc:
+        if "ATTEST_EVIDENCE_BUCKET" in str(exc):
+            bucket_missing = True
+        else:
+            raise
 
     if not bucket_missing:
         first = append_evidence("genesis")
