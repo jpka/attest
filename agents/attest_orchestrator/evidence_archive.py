@@ -222,6 +222,11 @@ class EvidenceArchive:
 
         blob = self._bucket.blob(f"evidence/{seq}.json")
         if blob.exists():
+            # An object at the expected path is not by itself proof that the
+            # right object is there. Compare it against what the committed
+            # entry serializes to, so a divergent-but-self-valid object is
+            # reported rather than silently accepted as a successful repair.
+            self._assert_gcs_matches(blob, seq)
             return None
 
         snap = self._db.collection(ENTRY_COLLECTION).document(str(seq)).get()
@@ -239,6 +244,18 @@ class EvidenceArchive:
                 f"Entry {seq} hash {str(entry.get('entry_hash'))[:16]} does not match "
                 f"chain tail {tail_hash[:16]}. Refusing to reconcile."
             )
+        # The document ID and the entry's own `sequence` must agree.
+        # `verify_entry` hashes `entry["sequence"]`, never the document ID, so a
+        # self-valid entry stored at document 1 while claiming sequence 2 passes
+        # both checks above — and `_write_gcs_immutable` derives its object path
+        # from the entry, so it would write evidence/2.json, leave
+        # evidence/1.json absent, and report the repair as successful.
+        if entry.get("sequence") != seq:
+            raise RuntimeError(
+                f"Entry document {seq} declares sequence {entry.get('sequence')}. "
+                "Refusing to reconcile — the object path is derived from the entry, "
+                "so repairing this would write the wrong object and leave the gap."
+            )
         if not self.verify_entry(entry):
             raise RuntimeError(
                 f"Entry {seq} fails its own hash verification. Refusing to reconcile."
@@ -252,6 +269,40 @@ class EvidenceArchive:
             tail_hash[:16],
         )
         return entry
+
+    def _assert_gcs_matches(self, blob, seq: int) -> None:
+        """Require the object at ``blob`` to match the committed entry.
+
+        Called wherever an object is found to already exist. "Some self-valid
+        entry is present at this path" is a weaker claim than "the entry
+        Firestore committed is present at this path", and only the second one
+        means the store agrees with the chain. Accepting the first lets a
+        divergent object sit at the right path while repair reports success.
+        """
+        snap = self._db.collection(ENTRY_COLLECTION).document(str(seq)).get()
+        if not snap.exists:
+            raise RuntimeError(
+                f"GCS object evidence/{seq}.json exists but Firestore has no entry "
+                f"{seq}. Refusing to treat this as reconciled."
+            )
+        committed = snap.to_dict() or {}
+        # Compare parsed entries, not raw bytes: key order is not part of the
+        # entry's identity, and a byte compare would flag a valid object
+        # written with a different serializer as corruption.
+        try:
+            actual = json.loads(blob.download_as_text())
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"GCS object evidence/{seq}.json is not readable JSON. "
+                "Refusing to report a successful repair."
+            ) from exc
+        if actual != committed:
+            raise RuntimeError(
+                f"GCS object evidence/{seq}.json does not match the committed entry "
+                f"(expected entry_hash {str(committed.get('entry_hash'))[:16]}, "
+                f"found {str(actual.get('entry_hash'))[:16]}). "
+                "Refusing to report a successful repair."
+            )
 
     def _write_gcs_immutable(self, entry: dict) -> None:
         """Write one entry to GCS immutably.
@@ -273,17 +324,23 @@ class EvidenceArchive:
             )
         except Exception as exc:
             # Object may already exist (partial previous attempt).
-            # Verify it matches our expected hash.
+            # Verify it is *this* entry, not merely a self-consistent one.
             if "conditionNotMet" in str(exc) or "412" in str(exc) or "PreconditionFailed" in str(exc):
                 existing = blob.download_as_text()
                 existing_entry = json.loads(existing)
-                # CR: verify the entire entry, not just the hash
-                if self.verify_entry(existing_entry):
+                # verify_entry() only proves the object is internally
+                # consistent. A *different* entry that hashes correctly would
+                # pass it while diverging from what this call committed, so
+                # compare the entries themselves. Compare parsed dicts, not
+                # raw bytes: an object written by another client may use a
+                # different key order and still be the same entry, and
+                # rejecting that would turn a valid retry into corruption.
+                if self.verify_entry(existing_entry) and existing_entry == entry:
                     return
                 raise RuntimeError(
-                    f"GCS object {path} exists with different hash: "
-                    f"expected {entry['entry_hash'][:16]}, "
-                    f"found {existing_entry.get('entry_hash', 'unknown')[:16]}. "
+                    f"GCS object {path} exists with different content: "
+                    f"expected entry_hash {entry['entry_hash'][:16]}, "
+                    f"found {str(existing_entry.get('entry_hash', 'unknown'))[:16]}. "
                     f"Chain corruption detected."
                 ) from exc
             raise
