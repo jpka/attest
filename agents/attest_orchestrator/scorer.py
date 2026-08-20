@@ -25,6 +25,22 @@ logger = logging.getLogger(__name__)
 # Category C is UNVERIFIABLE by construction. See section 3 above.
 CATEGORY_C = "C"
 
+# Valid verdict classes — anything else is ERROR-UNPARSED. Shared by every
+# parse path so a model that emits "PASS" or "TRUE" cannot smuggle an
+# unvetted label into the evidence chain.
+VALID_VERDICTS = {
+    "MATERIAL-FALSE",
+    "MATERIAL-FABRICATED",
+    "IMMATERIAL-FALSE",
+    "UNSUPPORTED-OPINION",
+    "ACCURATE",
+    "ABSTAINED",
+    "NOT-SURFACED",
+    "UNVERIFIABLE",
+    "ERROR-UNPARSED",
+    "ERROR-MISSING",
+}
+
 # Same model family as premise_test.py's grader for comparability. §5.1: the
 # scoring loop is high-volume, so it stays on -flash-lite.
 SCORER_MODEL = os.environ.get("ATTEST_SCORER_MODEL", "gemini-3.1-flash-lite")
@@ -108,6 +124,12 @@ def parse_verdict(raw: str) -> tuple[str, str]:
     """
     raw = raw.strip()
 
+    def _valid(class_name: str) -> str:
+        """Normalize and validate a verdict class. Anything not in the
+        allowlist collapses to ERROR-UNPARSED."""
+        normalized = class_name.strip().upper()
+        return normalized if normalized in VALID_VERDICTS else "ERROR-UNPARSED"
+
     # Direct parse.
     try:
         data = json.loads(raw)
@@ -116,7 +138,7 @@ def parse_verdict(raw: str) -> tuple[str, str]:
             if verdicts and isinstance(verdicts[0], dict):
                 v = verdicts[0]
                 return (
-                    str(v.get("class", "ERROR-UNPARSED")).strip().upper(),
+                    _valid(v.get("class", "ERROR-UNPARSED")),
                     str(v.get("rationale", "")).strip(),
                 )
     except json.JSONDecodeError:
@@ -133,7 +155,7 @@ def parse_verdict(raw: str) -> tuple[str, str]:
                 obj, _ = decoder.raw_decode(raw, start)
                 if isinstance(obj, dict):
                     return (
-                        str(obj.get("class", "ERROR-UNPARSED")).strip().upper(),
+                        _valid(obj.get("class", "ERROR-UNPARSED")),
                         str(obj.get("rationale", "")).strip(),
                     )
             except json.JSONDecodeError:
@@ -147,7 +169,7 @@ def parse_verdict(raw: str) -> tuple[str, str]:
                 obj, cursor = decoder.raw_decode(raw, start)
                 if isinstance(obj, dict) and "class" in obj:
                     return (
-                        str(obj["class"]).strip().upper(),
+                        _valid(obj["class"]),
                         str(obj.get("rationale", "")).strip(),
                     )
             except json.JSONDecodeError:
@@ -158,7 +180,7 @@ def parse_verdict(raw: str) -> tuple[str, str]:
     # is parseable, but the class field was written in full.
     match = re.search(r'"class"\s*:\s*"([^"]+)"', raw)
     if match:
-        return (match.group(1).strip().upper(), "")
+        return (_valid(match.group(1)), "")
 
     return ("ERROR-UNPARSED", raw[:120].replace("\n", " "))
 
@@ -202,6 +224,27 @@ def score_answer(
     Category C always returns UNVERIFIABLE without a model call — that is the
     scope limit, not a fallback.
     """
+    # Normalize and validate category. Lowercase "c" must hit the scope limit,
+    # not bypass it; unknown categories fail loudly rather than reaching the
+    # model with an out-of-scope question.
+    if not isinstance(category, str) or not category.strip():
+        return {
+            "verdict": "ERROR",
+            "rationale": f"Invalid category: {category!r}.",
+            "rubric_version": scorer_prompts.RUBRIC_VERSION,
+            "model": "validation",
+            "category": str(category),
+        }
+    category = category.strip().upper()
+    if category not in CATEGORY_GROUND_TRUTH:
+        return {
+            "verdict": "ERROR",
+            "rationale": f"Unknown category: {category!r}.",
+            "rubric_version": scorer_prompts.RUBRIC_VERSION,
+            "model": "validation",
+            "category": category,
+        }
+
     if category == CATEGORY_C:
         return {
             "verdict": "UNVERIFIABLE",

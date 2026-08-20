@@ -65,10 +65,11 @@ def firm():
 
 class TestGroundTruthSlice:
     def test_prunes_empty_fields(self, firm):
-        slice_ = scorer.ground_truth_slice(firm, "B")
-        assert "aum" in slice_
-        # Empty disciplinary items should be pruned
-        assert "total_usd" in slice_["aum"]
+        """Category H includes disciplinary — assert _prune removes empty items."""
+        slice_ = scorer.ground_truth_slice(firm, "H")
+        assert "disciplinary" in slice_
+        # Empty disciplinary items list should be pruned by _prune
+        assert "items" not in slice_["disciplinary"]
 
     def test_category_B_includes_identity_aum_employees(self, firm):
         slice_ = scorer.ground_truth_slice(firm, "B")
@@ -175,3 +176,36 @@ class TestScoreAnswer:
         with caplog.at_level(logging.ERROR):
             scorer.score_answer(firm, "C", "fees?", "0.5%")
         assert "scorer call failed" not in caplog.text
+
+
+class TestVerdictValidation:
+    def test_unknown_class_rejected(self):
+        raw = '{"verdicts": [{"answer": 1, "class": "PASS", "rationale": "x"}]}'
+        verdict, _ = scorer.parse_verdict(raw)
+        assert verdict == "ERROR-UNPARSED"
+
+    def test_known_class_accepted(self):
+        raw = '{"verdicts": [{"answer": 1, "class": "accurate", "rationale": "x"}]}'
+        verdict, _ = scorer.parse_verdict(raw)
+        assert verdict == "ACCURATE"
+
+    def test_unknown_class_rejected_from_truncated(self):
+        raw = '[{"answer": 1, "class": "PASS", "rationale": "x'
+        verdict, _ = scorer.parse_verdict(raw)
+        assert verdict == "ERROR-UNPARSED"
+
+
+class TestCategoryNormalization:
+    def test_lowercase_c_hits_scope_limit(self, firm):
+        result = scorer.score_answer(firm, "c", "fees?", "0.5%")
+        assert result["verdict"] == "UNVERIFIABLE"
+
+    def test_unknown_category_rejected(self, firm):
+        result = scorer.score_answer(firm, "Z", "?", "x")
+        assert result["verdict"] == "ERROR"
+        assert "Unknown category" in result["rationale"]
+
+    def test_empty_category_rejected(self, firm):
+        result = scorer.score_answer(firm, "", "?", "x")
+        assert result["verdict"] == "ERROR"
+        assert "Invalid category" in result["rationale"]
