@@ -381,3 +381,46 @@ def test_from_env_requires_bucket(monkeypatch):
             sys.modules["google.cloud.storage"] = old_storage
         else:
             sys.modules.pop("google.cloud.storage", None)
+
+
+class TestAppendEvidenceToolSignature:
+    """The tool must not let the model supply chain linkage.
+
+    An earlier version of `append_evidence` accepted `prev_hash` as a tool
+    argument. That let the model fork or reset the chain by passing a stale
+    value — undetectable downstream, and precisely the failure the Evidence
+    Archive exists to prevent. The fix was to have the tool read the tail
+    itself; nothing asserted it stayed that way, so this is that assertion.
+
+    Read with `ast` rather than by importing: `agent.py` needs `google.adk`,
+    which the generated Dockerfile installs and CI does not, so an
+    import-based check here would be skipped on exactly the machines that run
+    it. Re-adding the parameter is a source-level mistake and this catches it
+    at the source.
+    """
+
+    def _signature_params(self) -> list[str]:
+        import ast
+        import pathlib
+
+        src = pathlib.Path("agents/attest_orchestrator/agent.py").read_text()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.FunctionDef) and node.name == "append_evidence":
+                args = node.args
+                assert not args.vararg, "no *args on a tool signature"
+                assert not args.kwarg, "no **kwargs on a tool signature"
+                return [a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
+        raise AssertionError("append_evidence not found in agent.py")
+
+    def test_takes_only_payload(self):
+        params = self._signature_params()
+        assert params == ["payload"], (
+            f"append_evidence must take only 'payload'; got {params}. "
+            "Chain linkage is read from the tail, never supplied by the caller."
+        )
+
+    def test_prev_hash_is_not_a_parameter(self):
+        assert "prev_hash" not in self._signature_params(), (
+            "prev_hash is back as a tool argument — the model can fork or reset "
+            "the chain by passing a stale value."
+        )
