@@ -7,7 +7,7 @@ require `google.adk` — the scorer is unit-testable without the agent runtime.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import agent  # noqa: F401
+    from . import agent, evidence_archive  # noqa: F401
 
 
 def __getattr__(name: str):
@@ -15,4 +15,8 @@ def __getattr__(name: str):
         from . import agent
 
         return agent
+    if name == "evidence_archive":
+        from . import evidence_archive
+
+        return evidence_archive
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
