@@ -509,7 +509,14 @@ class TestPostCommitGCSFailureIsRecoverable:
 
         second = archive.append("second", "gemini-3.5-flash-lite")
 
+        # Presence is the weaker claim, and asserting only presence is the same
+        # mistake this whole class is about: a faulty recovery that wrote
+        # *something* to the path would pass. Assert the restored object is the
+        # committed entry.
         assert "evidence/1.json" in store, "entry 1's object was not rewritten"
+        restored = json.loads(store["evidence/1.json"])
+        assert restored == first, "reconcile wrote something other than entry 1"
+        assert archive.verify_entry(restored)
         assert second["prev_hash"] == first["entry_hash"]
         assert second["sequence"] == 2
 
@@ -629,3 +636,87 @@ def test_precondition_failure_with_different_self_valid_content_raises():
 
     with pytest.raises(RuntimeError, match="exists with different content"):
         archive.append("payload", "gemini-3.5-flash-lite")
+
+
+class TestReconcileUnderWriteOnlyIdentity:
+    """reconcile_tail needs READ access, which appending does not imply.
+
+    `roles/storage.objectCreator` permits `create` and denies `objects.get`, so
+    the existence probe 403s under precisely the least-privilege posture this
+    project argues for. Revision 00011-wzd shipped that way and returned 500 on
+    every Pub/Sub delivery: the recovery code added to protect the archive took
+    the archive down.
+
+    `cmd_infra` now grants objectViewer too, so the probe works. This class
+    pins the fallback for when it does not — a denied probe must not fail the
+    append. An archive that refuses to record evidence because it cannot audit
+    itself has picked the worse of the two failures.
+    """
+
+    def _forbidden(self, message: str):
+        exc = Exception(message)
+        exc.code = 403
+        return exc
+
+    def test_denied_probe_skips_reconciliation_without_failing_append(self):
+        db, state, transactional = _make_tx_pair()
+        store = {}
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+
+        first = archive.append("genesis", "gemini-3.5-flash-lite")
+        del store["evidence/1.json"]
+
+        # The identity now loses read access: a fresh bucket whose existence
+        # probe 403s but whose writes still succeed. Building it separately
+        # avoids wrapping the previous mock's own side_effect, which recurses.
+        denied = _mock_gcs(store)
+        inner = denied.blob.side_effect
+        forbidden = self._forbidden(
+            "403 GET .../evidence%2F1.json: attest-runtime@... does not have "
+            "storage.objects.get access"
+        )
+
+        def blob_denied(path):
+            blob = inner(path)
+            blob.exists.side_effect = forbidden
+            return blob
+
+        denied.blob.side_effect = blob_denied
+        archive._bucket = denied
+
+        # The append must still succeed — this is the regression.
+        second = archive.append("second", "gemini-3.5-flash-lite")
+        assert second["sequence"] == 2
+        assert second["prev_hash"] == first["entry_hash"]
+        # And the new entry is still durably written.
+        assert "evidence/2.json" in store
+
+    def test_denied_probe_returns_none_rather_than_raising(self):
+        db, _state, transactional = _make_tx_pair()
+        bucket = _mock_gcs()
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        blob = bucket.blob("evidence/1.json")
+        blob.exists.side_effect = self._forbidden("403 Permission denied")
+        bucket.blob.side_effect = lambda p: blob
+
+        assert archive.reconcile_tail() is None
+
+    def test_a_non_permission_error_still_propagates(self):
+        """Only 403 is tolerated. Everything else is a real fault.
+
+        Swallowing every probe failure would turn 'the bucket is gone' into a
+        silent skip, which is the bug this PR started from.
+        """
+        db, _state, transactional = _make_tx_pair()
+        bucket = _mock_gcs()
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        blob = bucket.blob("evidence/1.json")
+        blob.exists.side_effect = RuntimeError("connection reset")
+        bucket.blob.side_effect = lambda p: blob
+
+        with pytest.raises(RuntimeError, match="connection reset"):
+            archive.reconcile_tail()

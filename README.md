@@ -142,7 +142,7 @@ ingest/
 deploy.sh                 idempotent gcloud driver
 publish_registry.py       ground_truth.json -> Firestore
 local_test.py             run everything locally first
-tests/                    123 tests; ruff + pytest on every push and PR
+tests/                    126 tests; ruff + pytest on every push and PR
 ```
 
 ## The Battery Registry

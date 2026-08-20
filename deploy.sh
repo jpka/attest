@@ -104,6 +104,15 @@ cmd_infra() {
     --member "serviceAccount:${RUNTIME_SA_EMAIL}" --role roles/storage.objectCreator \
     --quiet >/dev/null
   echo "  granted storage.objectCreator to ${RUNTIME_SA_EMAIL}"
+  # objectViewer as well, and it is not redundant: objectCreator permits
+  # `create` and DENIES `objects.get`. reconcile_tail() probes for a missing
+  # object before every append, so a write-only identity 403s on its own
+  # gap-detection check — which is exactly what happened on revision
+  # 00011-wzd. Read is still narrower than admin: no delete, no overwrite.
+  gcloud storage buckets add-iam-policy-binding "gs://${bucket}" \
+    --member "serviceAccount:${RUNTIME_SA_EMAIL}" --role roles/storage.objectViewer \
+    --quiet >/dev/null
+  echo "  granted storage.objectViewer to ${RUNTIME_SA_EMAIL} (reconcile needs read)"
   # CR: export for the deploy step — but cmd_deploy also computes this
   # from $PROJECT, so a standalone ./deploy.sh deploy works without infra.
   export ATTEST_EVIDENCE_BUCKET="$bucket"
