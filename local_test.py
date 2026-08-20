@@ -47,7 +47,34 @@ def main() -> int:
     )
 
     check("agent loads", root_agent.name == "attest_orchestrator", root_agent.model)
-    check("tools attached", len(root_agent.tools) == 3)
+    # Assert the tools by NAME, not by count. A bare count silently passes when
+    # one tool is swapped for another, and silently fails every time a tool is
+    # added — it was still asserting 3 after the scorer made it 4.
+    #
+    # purge_firm_memory is deliberately absent: it is destructive and a
+    # Pub/Sub-triggered run reaches these tools with a payload the operator did
+    # not write. Purging stays an operator action.
+    expected_tools = {
+        "get_adv_ground_truth",
+        "list_covered_firms",
+        "append_evidence",
+        "score_answer",
+        "remember_firm_finding",
+        "recall_firm_memory",
+    }
+    attached = {getattr(t, "__name__", str(t)) for t in root_agent.tools}
+    check(
+        "tools attached",
+        attached == expected_tools,
+        f"missing {sorted(expected_tools - attached)} unexpected {sorted(attached - expected_tools)}"
+        if attached != expected_tools
+        else f"{len(attached)} tools",
+    )
+    check(
+        "purge is not model-reachable",
+        "purge_firm_memory" not in attached,
+        "destructive tool must stay operator-only",
+    )
 
     # Ground truth is a Firestore read now, so this is also the registry test.
     # A missing roster or missing credentials must fail loudly here rather than

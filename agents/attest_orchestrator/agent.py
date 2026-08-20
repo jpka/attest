@@ -19,7 +19,7 @@ import os
 
 from google.adk.agents import Agent
 
-from . import evidence_archive, registry, scorer
+from . import evidence_archive, memory_bank, registry, scorer
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,17 @@ If you are given an AI assistant's answer to classify, call `score_answer` with
 the firm record, category, prompt, and answer. It returns a verdict, rationale,
 rubric version, and model — cite all four when reporting the finding.
 
+Working memory: before summarising a firm, call `recall_firm_memory` with the
+CRD and, if relevant, a semantic query (e.g. "assets under management") or a
+category filter. After scoring or summarising, call `remember_firm_finding`
+with the CRD, category, and the verbatim finding so future runs can build on
+it. Working memory is not ground truth — it is what you have previously
+observed. The Battery Registry remains the source of record.
+
+You cannot delete memories. Purging is an operator action and no tool for it is
+available to you; if a firm's working memory looks wrong, report that in your
+findings rather than trying to correct it.
+
 Scope limits you must respect, because they are what keep findings defensible:
 - Part 1A gives the BASIS of advisory compensation, never the rate card. Fee
   schedules and account minimums live in Part 2A, which you do not have. Never
@@ -130,5 +141,12 @@ Scope limits you must respect, because they are what keep findings defensible:
 - Absence of a field is not evidence a claim is false.
 
 Be terse. You are writing a compliance record, not talking to a customer.""",
-    tools=[get_adv_ground_truth, list_covered_firms, append_evidence, scorer.score_answer],
+    tools=[
+        get_adv_ground_truth,
+        list_covered_firms,
+        append_evidence,
+        scorer.score_answer,
+        memory_bank.remember_firm_finding,
+        memory_bank.recall_firm_memory,
+    ],
 )
