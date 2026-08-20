@@ -8,6 +8,7 @@
 #   ./deploy.sh infra       service accounts, Pub/Sub topic, Firestore
 #   ./deploy.sh deploy      build + deploy the agent to Cloud Run
 #   ./deploy.sh wire        push subscription + Cloud Scheduler job
+#   ./deploy.sh memory      provision the Memory Bank reasoning engine
 #   ./deploy.sh smoke       publish one message and tail the logs
 #   ./deploy.sh all         apis, infra, deploy, wire, smoke
 set -euo pipefail
@@ -113,6 +114,9 @@ cmd_deploy() {
   if [[ -n "${ATTEST_EVIDENCE_BUCKET:-}" ]]; then
     env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${ATTEST_EVIDENCE_BUCKET}"
   fi
+  if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
+    env_vars="${env_vars},ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID}"
+  fi
   adk deploy cloud_run \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -172,6 +176,56 @@ cmd_wire() {
     || gcloud scheduler jobs create pubsub "$JOB" "${args[@]}"
 }
 
+cmd_memory() {
+  say "Memory Bank — Vertex AI reasoning engine"
+  # The engine is provisioned via REST because gcloud has no first-class
+  # reasoning-engine create with memoryBankConfig. The service agent needs
+  # roles/aiplatform.user (granted Aug 20) to generate embeddings.
+  local project_number; project_number="$(gcloud projects describe "$PROJECT" --format 'value(projectNumber)')"
+  local base="https://${REGION}-aiplatform.googleapis.com/v1beta1"
+  local parent="projects/${PROJECT}/locations/${REGION}"
+  local token; token="$(gcloud auth print-access-token)"
+
+  # Reuse an existing engine if ATTEST_MEMORY_ENGINE_ID is already set.
+  if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
+    echo "  ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID} already set; skipping create"
+    return 0
+  fi
+
+  local response; response=$(curl -s -X POST \
+    -H "Authorization: Bearer ${token}" \
+    -H "Content-Type: application/json" \
+    "${base}/${parent}/reasoningEngines" \
+    -d "{
+      \"displayName\": \"attest-memory-bank\",
+      \"description\": \"Attest surveillance working memory (Memory Bank).\",
+      \"contextSpec\": {
+        \"memoryBankConfig\": {
+          \"generationConfig\": {\"model\": \"projects/${PROJECT}/locations/${REGION}/publishers/google/models/gemini-2.5-flash\"},
+          \"similaritySearchConfig\": {\"embeddingModel\": \"projects/${PROJECT}/locations/${REGION}/publishers/google/models/text-embedding-005\"}
+        }
+      }
+    }")
+  local op_name; op_name="$(echo "$response" | python3 -c 'import sys,json; print(json.load(sys.stdin)["name"])')"
+  echo "  create LRO: $op_name"
+
+  local engine_name=""
+  for _ in $(seq 1 40); do
+    local op; op=$(curl -s -H "Authorization: Bearer ${token}" "${base}/${op_name}")
+    if echo "$op" | grep -q '"done": *true'; then
+      engine_name="$(echo "$op" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("response",{}).get("name",""))')"
+      break
+    fi
+    sleep 5
+  done
+  [[ -n "$engine_name" ]] || { echo "  engine creation did not finish"; return 1; }
+  local engine_id="${engine_name##*/}"
+  echo "  engine: $engine_name"
+  echo ""
+  echo "  *** Set ATTEST_MEMORY_ENGINE_ID=${engine_id} and re-run ./deploy.sh deploy ***"
+  echo "  (or add it to your shell environment before deploying)"
+}
+
 cmd_smoke() {
   say "Publishing one test message"
   gcloud pubsub topics publish "$TOPIC" --project "$PROJECT" \
@@ -191,7 +245,8 @@ case "${1:-all}" in
   infra)  cmd_infra ;;
   deploy) cmd_deploy ;;
   wire)   cmd_wire ;;
+  memory) cmd_memory ;;
   smoke)  cmd_smoke ;;
-  all)    cmd_apis; cmd_infra; cmd_deploy; cmd_wire; cmd_smoke ;;
+  all)    cmd_apis; cmd_infra; cmd_memory; cmd_deploy; cmd_wire; cmd_smoke ;;
   *)      sed -n '2,14p' "$0"; exit 1 ;;
 esac
