@@ -41,9 +41,31 @@ def _independent_hash(payload, prev_hash, timestamp, sequence, model_id):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _mock_gcs():
+def _mock_gcs(store: dict | None = None):
+    """A bucket that actually stores what is uploaded.
+
+    Reconciliation compares the object's bytes against the committed entry, so
+    a bucket whose download_as_text() returns a MagicMock cannot exercise that
+    path — it fails for the wrong reason. This keeps a dict of path -> content.
+    """
+    store = {} if store is None else store
     bucket = MagicMock()
-    bucket.blob.return_value = MagicMock()
+
+    def blob_for(path):
+        blob = MagicMock()
+        blob.exists.side_effect = lambda: path in store
+
+        def upload(content, **kw):
+            if kw.get("if_generation_match") == 0 and path in store:
+                raise RuntimeError("412 conditionNotMet")
+            store[path] = content
+
+        blob.upload_from_string.side_effect = upload
+        blob.download_as_text.side_effect = lambda: store[path]
+        return blob
+
+    bucket.blob.side_effect = blob_for
+    bucket._store = store
     return bucket
 
 
@@ -438,42 +460,26 @@ class TestAppendEvidenceToolSignature:
         )
 
 
+
 class TestPostCommitGCSFailureIsRecoverable:
     """The window between the Firestore commit and the GCS write.
 
     `append` commits the entry and advances the tail, then writes the object.
     If the second step fails — process death, or a bucket that is not there —
-    Firestore holds a committed entry with no durable object behind it, and
-    the *next* append reads that advanced tail, succeeds, and buries the gap
-    one entry deeper where nothing will ever look for it.
+    Firestore holds a committed entry with no durable object, and the *next*
+    append reads that advanced tail, succeeds, and buries the gap one entry
+    deeper where nothing will look for it.
 
-    This is not hypothetical. `deploy.sh infra` gained the bucket-creation
-    step days after `infra` had last been run, so the deployed archive spent
-    four days committing to Firestore and 404ing on GCS. Entries 1 and 2 of
-    the live chain exist in Firestore with no object, permanently, because
-    nothing reconciled before appending 3.
+    Not hypothetical. `deploy.sh infra` gained the bucket-creation step days
+    after `infra` had last been run, so the deployed archive spent four days
+    committing to Firestore and 404ing on GCS. Entries 1 and 2 of the live
+    chain exist in Firestore with no object, permanently, because nothing
+    reconciled before entry 3 was appended.
 
     `reconcile_tail` closes it: re-write the same committed entry, never roll
     the chain back. The entry may already have been reported to a caller, so
-    retracting its hash is worse than repairing it, and a content-addressed
-    entry re-writes byte-identically or it is corruption.
+    retracting its hash is worse than repairing it.
     """
-
-    def _bucket_that_fails_writes(self, missing: set[int]):
-        """A bucket whose objects for `missing` sequences do not exist."""
-        bucket = MagicMock()
-
-        def blob_for(path):
-            seq = int(path.split("/")[-1].split(".")[0])
-            blob = MagicMock()
-            blob.exists.return_value = seq not in missing
-            def upload(content, **kw):
-                missing.discard(seq)
-            blob.upload_from_string.side_effect = upload
-            return blob
-
-        bucket.blob.side_effect = blob_for
-        return bucket
 
     def test_gcs_failure_after_commit_leaves_a_committed_entry(self):
         """Establish the hazard: the commit survives, the object does not."""
@@ -493,27 +499,23 @@ class TestPostCommitGCSFailureIsRecoverable:
         assert state["meta"]["sequence"] == 1
 
     def test_next_append_reconciles_the_missing_object(self):
-        db, state, transactional = _make_tx_pair()
-        bucket = self._bucket_that_fails_writes(missing=set())
-        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        store = {}
+        db, _state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
 
         first = archive.append("genesis", "gemini-3.5-flash-lite")
-
-        # Simulate the post-commit failure: entry 1 is committed, object gone.
-        missing = {1}
-        archive._bucket = self._bucket_that_fails_writes(missing)
+        # Simulate the post-commit failure: entry 1 committed, object lost.
+        del store["evidence/1.json"]
 
         second = archive.append("second", "gemini-3.5-flash-lite")
 
-        # The gap was repaired rather than buried, and the chain still links.
-        assert missing == set(), "entry 1's object was not rewritten"
+        assert "evidence/1.json" in store, "entry 1's object was not rewritten"
         assert second["prev_hash"] == first["entry_hash"]
         assert second["sequence"] == 2
 
     def test_reconcile_is_a_noop_when_the_object_is_present(self):
         db, _state, transactional = _make_tx_pair()
-        bucket = self._bucket_that_fails_writes(missing=set())
-        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
         archive.append("genesis", "gemini-3.5-flash-lite")
 
         assert archive.reconcile_tail() is None
@@ -528,28 +530,102 @@ class TestPostCommitGCSFailureIsRecoverable:
 
         assert archive.reconcile_tail() is None
 
+    def test_reconcile_rejects_a_divergent_object_at_the_expected_path(self):
+        """An object at the right path is not proof of the right object.
+
+        A self-valid entry for some *other* payload can sit at
+        evidence/{seq}.json. Accepting it because the path is occupied would
+        report a successful repair while Firestore and GCS disagree about what
+        entry 1 says — which is the one thing the archive exists to rule out.
+        """
+        store = {}
+        db, _state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        # Replace the object with a different, internally consistent entry.
+        ts = "2026-08-20T16:00:00+00:00"
+        other = {
+            "entry_hash": _independent_hash("tampered", "", ts, 1, "m"),
+            "prev_hash": "",
+            "timestamp": ts,
+            "sequence": 1,
+            "payload": "tampered",
+            "payload_sha256": hashlib.sha256(b"tampered").hexdigest(),
+            "model_id": "m",
+        }
+        store["evidence/1.json"] = json.dumps(other, sort_keys=True)
+
+        with pytest.raises(RuntimeError, match="does not match the committed entry"):
+            archive.reconcile_tail()
+
+    def test_reconcile_rejects_an_entry_whose_sequence_disagrees(self):
+        """Document ID and entry sequence must agree.
+
+        `verify_entry` hashes `entry["sequence"]`, never the document ID, so a
+        self-valid entry stored at document 1 while claiming sequence 2 passes
+        both the tail-hash and self-verification checks. The object path is
+        derived from the entry, so repairing it would write evidence/2.json,
+        leave evidence/1.json absent, and report success.
+        """
+        db, state, transactional = _make_tx_pair()
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
+
+        ts = "2026-08-20T16:00:00+00:00"
+        # Self-consistent entry that declares sequence 2 ...
+        entry = {
+            "entry_hash": _independent_hash("payload", "", ts, 2, "m"),
+            "prev_hash": "",
+            "timestamp": ts,
+            "sequence": 2,
+            "payload": "payload",
+            "payload_sha256": hashlib.sha256(b"payload").hexdigest(),
+            "model_id": "m",
+        }
+        # ... stored at document 1, with the tail naming sequence 1.
+        state["entries"][1] = entry
+        state["meta"] = {"tail_hash": entry["entry_hash"], "sequence": 1}
+
+        with pytest.raises(RuntimeError, match="declares sequence 2"):
+            archive.reconcile_tail()
+
     def test_reconcile_refuses_when_the_entry_document_is_absent(self):
         """A tail naming a sequence with no entry is not a partial write.
 
-        Re-writing here would mean inventing the entry's contents. Refuse
-        loudly instead — an archive that fabricates a record to close a gap
-        is worse than one that reports the gap.
+        Re-writing would mean inventing the entry's contents. An archive that
+        fabricates a record to close a gap is worse than one that reports it.
         """
         db, state, transactional = _make_tx_pair()
-        bucket = self._bucket_that_fails_writes(missing={1})
-        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
         state["meta"] = {"tail_hash": "a" * 64, "sequence": 1}
-
-        db.collection.return_value.document.side_effect = None
-        absent = MagicMock()
-        absent.get.return_value.exists = False
-        meta = MagicMock()
-        meta.id = "meta"
-        meta.get.return_value.exists = True
-        meta.get.return_value.to_dict = lambda: dict(state["meta"])
-        db.collection.return_value.document.side_effect = lambda n: (
-            meta if n == "meta" else absent
-        )
 
         with pytest.raises(RuntimeError, match="no entry document exists"):
             archive.reconcile_tail()
+
+
+def test_precondition_failure_with_different_self_valid_content_raises():
+    """A 412 does not license accepting whatever is already there.
+
+    `if_generation_match=0` fails when an object exists. The handler then reads
+    it to decide whether this is an idempotent retry. `verify_entry` alone only
+    proves that object is internally consistent — a self-valid entry for a
+    different payload passes it, so the retry would be reported as successful
+    while GCS holds something else. The entries themselves must match.
+    """
+    db, _state, transactional = _make_tx_pair()
+    ts = "2026-08-20T16:00:00+00:00"
+    other = {
+        "entry_hash": _independent_hash("different", "", ts, 1, "m"),
+        "prev_hash": "",
+        "timestamp": ts,
+        "sequence": 1,
+        "payload": "different",
+        "payload_sha256": hashlib.sha256(b"different").hexdigest(),
+        "model_id": "m",
+    }
+    # Pre-seed the path so the immutable write hits its precondition.
+    store = {"evidence/1.json": json.dumps(other, sort_keys=True)}
+    archive = EvidenceArchive(db, _mock_gcs(store), transactional=transactional)
+
+    with pytest.raises(RuntimeError, match="exists with different content"):
+        archive.append("payload", "gemini-3.5-flash-lite")

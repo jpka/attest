@@ -142,7 +142,7 @@ ingest/
 deploy.sh                 idempotent gcloud driver
 publish_registry.py       ground_truth.json -> Firestore
 local_test.py             run everything locally first
-tests/                    120 tests; ruff + pytest on every push and PR
+tests/                    123 tests; ruff + pytest on every push and PR
 ```
 
 ## The Battery Registry
@@ -196,8 +196,19 @@ would read that tail, succeed, and bury the gap one entry deeper.
 **that same committed entry** rather than rolling the chain back. Rolling back would retract
 a hash that may already have been reported to a caller, and because entries are
 content-addressed, a re-write is either byte-identical or it is corruption — nothing is
-invented. If the tail names a sequence with no entry document, or the entry fails its own
-verification, it refuses loudly instead of guessing.
+invented. It refuses loudly rather than guessing when the tail names a sequence with no entry
+document, when the entry's own `sequence` disagrees with its document id, when the entry fails
+its own verification, or when an object already sitting at the path is not the committed entry.
+
+**`if_generation_match=0` is overwrite protection, not request idempotency, and the
+difference matters.** It guarantees an existing object is never silently replaced. It does not
+make a *retried call* a no-op: after Firestore commits and the GCS write fails, retrying
+`append` repairs the prior object and then appends a **second entry**, because nothing in the
+request identifies it as the same logical append. Genuine end-to-end idempotency needs a
+durable client-supplied request id, which this does not have. What is guaranteed is narrower
+and stated deliberately: **no entry is ever lost or overwritten, and no gap survives the next
+append.** A duplicate entry for a retried request is possible; a silently altered or missing
+one is not.
 
 This is not a hypothetical window. Entries 1 and 2 of the live chain exist in Firestore with
 no GCS object, permanently, because the bucket did not exist when they were written and
