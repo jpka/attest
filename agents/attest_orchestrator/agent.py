@@ -128,6 +128,10 @@ with the CRD, category, and the verbatim finding so future runs can build on
 it. Working memory is not ground truth — it is what you have previously
 observed. The Battery Registry remains the source of record.
 
+You cannot delete memories. Purging is an operator action and no tool for it is
+available to you; if a firm's working memory looks wrong, report that in your
+findings rather than trying to correct it.
+
 Scope limits you must respect, because they are what keep findings defensible:
 - Part 1A gives the BASIS of advisory compensation, never the rate card. Fee
   schedules and account minimums live in Part 2A, which you do not have. Never
@@ -144,6 +148,5 @@ Be terse. You are writing a compliance record, not talking to a customer.""",
         scorer.score_answer,
         memory_bank.remember_firm_finding,
         memory_bank.recall_firm_memory,
-        memory_bank.purge_firm_memory,
     ],
 )

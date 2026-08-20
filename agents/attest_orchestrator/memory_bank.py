@@ -36,6 +36,38 @@ EMBEDDING_MODEL = "text-embedding-005"
 # subject-model bump cannot silently change how memories are generated or
 # embedded.
 
+# Retrieval bound. `limit` reaches recall_firm_memory from the model, so it is
+# untrusted input: an oversized value floods the model context and a
+# non-positive one is a 400 from the service.
+MAX_RETRIEVAL_LIMIT = 20
+
+
+class InvalidCRDError(ValueError):
+    """A CRD that is not a plain number.
+
+    Every scope and filter in this module is keyed by CRD. The purge filter is
+    an AIP-160 expression built by string interpolation, so an unvalidated CRD
+    containing a double quote can close the literal early and widen the filter
+    to memories the caller never named. Rejecting anything non-numeric closes
+    that off at the only place the value enters.
+    """
+
+
+def _validate_crd(crd: str) -> str:
+    """Return the CRD as a bare numeric string, or raise ``InvalidCRDError``.
+
+    A CRD is a registration number, so this is not a cosmetic check: it is what
+    makes the interpolated purge filter safe.
+    """
+    normalized = str(crd).strip()
+    if not normalized.isdigit():
+        raise InvalidCRDError(
+            f"CRD must be a number, got {crd!r}. Scope and purge filters are "
+            "keyed by CRD, so a non-numeric value is rejected rather than "
+            "interpolated."
+        )
+    return normalized
+
 
 @dataclass(frozen=True)
 class MemoryBankConfig:
@@ -78,9 +110,14 @@ class MemoryBankConfig:
         project = os.environ.get("GOOGLE_CLOUD_PROJECT")
         if not project:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is not set")
+        # ATTEST_MEMORY_LOCATION, not ATTEST_MODEL_LOCATION. The subject model
+        # resolves only on Vertex's `global` location and deploy.sh sets the
+        # model location to `global` accordingly — but reasoning engines are
+        # regional and do not exist in `global`. Sharing one variable across
+        # both would point the engine at a location it cannot live in.
         return cls(
             project=project,
-            location=os.environ.get("ATTEST_MODEL_LOCATION", DEFAULT_LOCATION),
+            location=os.environ.get("ATTEST_MEMORY_LOCATION", DEFAULT_LOCATION),
             engine_id=os.environ.get("ATTEST_MEMORY_ENGINE_ID", "").strip(),
         )
 
@@ -213,6 +250,27 @@ class MemoryBank:
     # Engine lifecycle
     # ------------------------------------------------------------------
 
+    def _list_all(self, url: str, key: str) -> list[dict]:
+        """Follow every ``nextPageToken`` and return the full collection.
+
+        Vertex list endpoints paginate. Reading only the first page makes an
+        absent item indistinguishable from an item on page 2 — which for
+        engine lookup means creating a duplicate, and for memory listing means
+        reporting "no memories" while some exist.
+        """
+        items: list[dict] = []
+        page_token = ""
+        while True:
+            paged = url
+            if page_token:
+                sep = "&" if "?" in url else "?"
+                paged = f"{url}{sep}pageToken={page_token}"
+            body = self._client.call("GET", paged)
+            items.extend(body.get(key, []))
+            page_token = body.get("nextPageToken", "")
+            if not page_token:
+                return items
+
     def ensure_engine(self) -> str:
         """Return the engine resource name, creating it if necessary.
 
@@ -228,10 +286,11 @@ class MemoryBank:
             logger.info("memory_bank.engine exists: %s", engine_name)
             return engine_name
 
-        # Look up by display name before creating.
-        existing = self._client.call(
-            "GET", f"{base}/{self._config.parent}/reasoningEngines"
-        ).get("reasoningEngines", [])
+        # Look up by display name across every page before creating, so a match
+        # on a later page does not produce a duplicate engine.
+        existing = self._list_all(
+            f"{base}/{self._config.parent}/reasoningEngines", "reasoningEngines"
+        )
         for e in existing:
             if e.get("displayName") == self._config.display_name:
                 logger.info("memory_bank.engine reused: %s", e["name"])
@@ -349,11 +408,14 @@ class MemoryBank:
         ).get("retrievedMemories", [])
 
     def list_memories(self, scope: dict[str, str] | None = None) -> list[dict]:
-        """List memories. If ``scope`` is given, filters client-side."""
-        memories = self._client.call(
-            "GET",
+        """List memories across every page. If ``scope`` is given, filters
+        client-side after the full set is collected, so an empty result means
+        "no match" rather than "not on page 1".
+        """
+        memories = self._list_all(
             f"{self._client.base(self._config.location)}/{self._config.engine}/memories",
-        ).get("memories", [])
+            "memories",
+        )
         if scope is None:
             return memories
         return [m for m in memories if m.get("scope") == scope]
@@ -390,6 +452,10 @@ class MemoryBank:
 
 # ----------------------------------------------------------------------
 # Agent-facing tools
+#
+# Only the two non-destructive operations are registered on the agent.
+# Purging is an operator action — see `purge_firm_memory` below, which is
+# deliberately NOT in root_agent.tools.
 # ----------------------------------------------------------------------
 
 
@@ -409,11 +475,16 @@ def remember_firm_finding(
         roster_version: The roster version the finding was scored against.
 
     Returns:
-        The generated-memory records, each with an action (CREATED / UPDATED).
+        The generated-memory records, each with an action (CREATED / UPDATED),
+        or an error dict if the CRD is not a number.
     """
+    try:
+        validated = _validate_crd(crd)
+    except InvalidCRDError as exc:
+        return {"error": "invalid_crd", "detail": str(exc)}
     bank = MemoryBank.from_env()
     metadata: dict[str, dict[str, Any]] = {
-        "crd": {"stringValue": str(crd).strip()},
+        "crd": {"stringValue": validated},
         "category": {"stringValue": category},
     }
     if roster_version:
@@ -421,7 +492,7 @@ def remember_firm_finding(
     return {
         "results": bank.generate_memories(
             facts=[fact],
-            scope={"crd": str(crd).strip()},
+            scope={"crd": validated},
             metadata=metadata,
         )
     }
@@ -439,14 +510,25 @@ def recall_firm_memory(
         crd: The firm's CRD number, e.g. "900001".
         query: Semantic search query. If empty, returns the most recent memories.
         category: Optional battery category to filter by.
-        limit: Maximum memories to return.
+        limit: Maximum memories to return (clamped to 1..20).
 
     Returns:
         A list of retrieved memories, each with ``memory`` and optional
-        ``distance``.
+        ``distance``, or an error dict if the CRD is not a number.
     """
+    try:
+        validated = _validate_crd(crd)
+    except InvalidCRDError as exc:
+        return {"error": "invalid_crd", "detail": str(exc)}
+
+    # `limit` comes from the model: clamp rather than forward it. An oversized
+    # value floods the context; a non-positive one is a 400 from the service.
+    try:
+        bounded = max(1, min(int(limit), MAX_RETRIEVAL_LIMIT))
+    except (TypeError, ValueError):
+        bounded = 5
+
     bank = MemoryBank.from_env()
-    scope = {"crd": str(crd).strip()}
     filter_groups = None
     if category:
         filter_groups = [
@@ -461,10 +543,10 @@ def recall_firm_memory(
             }
         ]
     results = bank.retrieve(
-        scope=scope,
+        scope={"crd": validated},
         query=query or None,
-        top_k=limit,
-        page_size=limit,
+        top_k=bounded,
+        page_size=bounded,
         filter_groups=filter_groups,
     )
     return {"memories": results}
@@ -473,6 +555,12 @@ def recall_firm_memory(
 def purge_firm_memory(crd: str, dry_run: bool = True) -> dict:
     """Preview or execute deletion of all memories for a firm.
 
+    **Operator use only — deliberately not registered on the agent.** This is
+    the one destructive operation in the module, and a Pub/Sub-triggered run
+    reaches the agent's tools with a payload the operator did not write. A
+    model holding a delete-everything-for-this-firm tool is an authorization
+    gap, not a capability. Call it from a console or a script.
+
     Args:
         crd: The firm's CRD number, e.g. "900001".
         dry_run: When True (default), returns the count that would be deleted
@@ -480,10 +568,15 @@ def purge_firm_memory(crd: str, dry_run: bool = True) -> dict:
 
     Returns:
         The purge count.
+
+    Raises:
+        InvalidCRDError: if ``crd`` is not a number. The filter below is built
+            by interpolation, so this is what keeps it from being widened.
     """
+    validated = _validate_crd(crd)
     bank = MemoryBank.from_env()
     count = bank.purge_memories(
-        filter_expr=f'scope.crd="{str(crd).strip()}"',
+        filter_expr=f'scope.crd="{validated}"',
         force=not dry_run,
     )
     return {"purge_count": count, "dry_run": dry_run}
