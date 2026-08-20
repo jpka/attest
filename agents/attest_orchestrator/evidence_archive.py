@@ -14,10 +14,15 @@ fails at commit and retries, so two instances cannot fork the chain.
 
 **Idempotent append.** The Firestore transaction commits first. The GCS object
 is then written with ``if_generation_match=0`` — an immutable create that fails
-if the object already exists. On retry after a partial failure, the same
-entry (same sequence, same timestamp, same hash) is computed, the Firestore
-tx is a no-op (entry already exists), and the GCS write confirms the object
-matches. Either call produces the same durable result.
+if the object already exists. On retry after a partial failure:
+
+- If the committed entry has the same hash (same payload, model, timestamp),
+  the GCS object is verified and the append is a no-op.
+- If the committed entry has a different hash, a ``RuntimeError`` is raised.
+
+Either call produces the same durable result. Concurrent writers cannot
+overwrite each other's GCS objects because the Firestore transaction aborts
+if meta advanced between read and commit.
 
 **Self-verifiable entries.** The GCS object stores the full entry including
 ``payload`` and ``model_id``, so a verifier can recompute ``entry_hash``
@@ -204,8 +209,8 @@ class EvidenceArchive:
             if "conditionNotMet" in str(exc) or "412" in str(exc) or "PreconditionFailed" in str(exc):
                 existing = blob.download_as_text()
                 existing_entry = json.loads(existing)
-                if existing_entry.get("entry_hash") == entry["entry_hash"]:
-                    # Same entry already persisted — idempotent retry.
+                # CR: verify the entire entry, not just the hash
+                if self.verify_entry(existing_entry):
                     return
                 raise RuntimeError(
                     f"GCS object {path} exists with different hash: "
@@ -279,6 +284,6 @@ class EvidenceArchive:
                 sequence=entry["sequence"],
                 model_id=entry["model_id"],
             )
+            return expected == entry["entry_hash"]
         except (KeyError, TypeError):
             return False
-        return expected == entry["entry_hash"]
