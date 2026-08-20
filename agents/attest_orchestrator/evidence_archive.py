@@ -146,9 +146,22 @@ class EvidenceArchive:
         a partial previous attempt left it in place and the Firestore entry
         is already committed.
 
+        Ordering note. Firestore commits first on purpose: the alternative,
+        writing GCS first, orphans an object whose entry never became part of
+        the chain, and there is no tail to reconcile it against. Committing
+        first means the *chain* is always authoritative and a missing object
+        is a repairable gap rather than an ambiguity — but only if something
+        actually repairs it, which is what ``reconcile_tail`` below is for.
+
         Returns the entry dict.
         """
         timestamp = datetime.now(UTC).isoformat()
+
+        # Repair a prior partial append before extending the chain. If the
+        # last append committed to Firestore and then failed to write GCS,
+        # the tail we are about to build on has no durable object behind it,
+        # and simply appending would bury that gap one entry deeper.
+        self.reconcile_tail()
 
         # Read the tail so we know what sequence to compute. The Firestore
         # transaction will re-read atomically and abort if another writer
@@ -182,6 +195,61 @@ class EvidenceArchive:
             "evidence.append seq=%d hash=%s",
             entry["sequence"],
             entry["entry_hash"][:16],
+        )
+        return entry
+
+    def reconcile_tail(self) -> dict | None:
+        """Re-write the GCS object for the tail entry if it is missing.
+
+        Closes the window between ``_tx_advance`` and ``_write_gcs_immutable``.
+        If the process dies in there — or the bucket is unreachable, which is
+        not hypothetical — Firestore holds a committed entry and an advanced
+        tail with no durable object behind it. The next ``append`` would read
+        that tail, succeed, and leave the gap permanently one entry back.
+
+        Recovery re-writes the *same committed entry* rather than rolling the
+        chain back. The entry is already the tail and may already have been
+        reported to a caller, so rolling back would retract a hash someone
+        holds; and because the entry is content-addressed, re-writing it is
+        byte-identical or it is corruption. Nothing is invented here.
+
+        Returns the repaired entry, or ``None`` when there was nothing to do
+        (the common case, and the empty-chain case).
+        """
+        tail_hash, seq = self.current_tail()
+        if seq == 0:
+            return None
+
+        blob = self._bucket.blob(f"evidence/{seq}.json")
+        if blob.exists():
+            return None
+
+        snap = self._db.collection(ENTRY_COLLECTION).document(str(seq)).get()
+        if not snap.exists:
+            # Tail names a sequence with no Firestore entry. That is not a
+            # partial GCS write and re-writing would be a guess, so refuse.
+            raise RuntimeError(
+                f"Chain tail names sequence {seq} but no entry document exists. "
+                "Refusing to reconcile — this is not a partial GCS write."
+            )
+
+        entry = snap.to_dict() or {}
+        if entry.get("entry_hash") != tail_hash:
+            raise RuntimeError(
+                f"Entry {seq} hash {str(entry.get('entry_hash'))[:16]} does not match "
+                f"chain tail {tail_hash[:16]}. Refusing to reconcile."
+            )
+        if not self.verify_entry(entry):
+            raise RuntimeError(
+                f"Entry {seq} fails its own hash verification. Refusing to reconcile."
+            )
+
+        self._write_gcs_immutable(entry)
+        logger.warning(
+            "evidence.reconcile seq=%d hash=%s — GCS object was missing for a "
+            "committed entry and has been rewritten",
+            seq,
+            tail_hash[:16],
         )
         return entry
 

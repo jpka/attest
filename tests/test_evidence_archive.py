@@ -98,6 +98,18 @@ def _make_tx_pair():
     def make_entry_ref(seq):
         ref = MagicMock()
         ref.id = str(seq)
+
+        # Non-transactional read, used by reconcile_tail. Serve it from the
+        # same state the fake transaction writes to, or the recovery path
+        # sees MagicMock attributes instead of the entry it just committed.
+        def get(transaction=None):
+            snap = MagicMock()
+            key = int(seq)
+            snap.exists = key in state["entries"]
+            snap.to_dict = lambda: dict(state["entries"].get(key, {}))
+            return snap
+
+        ref.get = get
         return ref
 
     db.collection.return_value.document.side_effect = lambda name: (
@@ -424,3 +436,120 @@ class TestAppendEvidenceToolSignature:
             "prev_hash is back as a tool argument — the model can fork or reset "
             "the chain by passing a stale value."
         )
+
+
+class TestPostCommitGCSFailureIsRecoverable:
+    """The window between the Firestore commit and the GCS write.
+
+    `append` commits the entry and advances the tail, then writes the object.
+    If the second step fails — process death, or a bucket that is not there —
+    Firestore holds a committed entry with no durable object behind it, and
+    the *next* append reads that advanced tail, succeeds, and buries the gap
+    one entry deeper where nothing will ever look for it.
+
+    This is not hypothetical. `deploy.sh infra` gained the bucket-creation
+    step days after `infra` had last been run, so the deployed archive spent
+    four days committing to Firestore and 404ing on GCS. Entries 1 and 2 of
+    the live chain exist in Firestore with no object, permanently, because
+    nothing reconciled before appending 3.
+
+    `reconcile_tail` closes it: re-write the same committed entry, never roll
+    the chain back. The entry may already have been reported to a caller, so
+    retracting its hash is worse than repairing it, and a content-addressed
+    entry re-writes byte-identically or it is corruption.
+    """
+
+    def _bucket_that_fails_writes(self, missing: set[int]):
+        """A bucket whose objects for `missing` sequences do not exist."""
+        bucket = MagicMock()
+
+        def blob_for(path):
+            seq = int(path.split("/")[-1].split(".")[0])
+            blob = MagicMock()
+            blob.exists.return_value = seq not in missing
+            def upload(content, **kw):
+                missing.discard(seq)
+            blob.upload_from_string.side_effect = upload
+            return blob
+
+        bucket.blob.side_effect = blob_for
+        return bucket
+
+    def test_gcs_failure_after_commit_leaves_a_committed_entry(self):
+        """Establish the hazard: the commit survives, the object does not."""
+        db, state, transactional = _make_tx_pair()
+        bucket = MagicMock()
+        blob = MagicMock()
+        blob.exists.return_value = False
+        blob.upload_from_string.side_effect = RuntimeError("bucket does not exist")
+        bucket.blob.return_value = blob
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+
+        with pytest.raises(RuntimeError, match="bucket does not exist"):
+            archive.append("genesis", "gemini-3.5-flash-lite")
+
+        # Firestore committed even though the caller saw an exception.
+        assert 1 in state["entries"]
+        assert state["meta"]["sequence"] == 1
+
+    def test_next_append_reconciles_the_missing_object(self):
+        db, state, transactional = _make_tx_pair()
+        bucket = self._bucket_that_fails_writes(missing=set())
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+
+        first = archive.append("genesis", "gemini-3.5-flash-lite")
+
+        # Simulate the post-commit failure: entry 1 is committed, object gone.
+        missing = {1}
+        archive._bucket = self._bucket_that_fails_writes(missing)
+
+        second = archive.append("second", "gemini-3.5-flash-lite")
+
+        # The gap was repaired rather than buried, and the chain still links.
+        assert missing == set(), "entry 1's object was not rewritten"
+        assert second["prev_hash"] == first["entry_hash"]
+        assert second["sequence"] == 2
+
+    def test_reconcile_is_a_noop_when_the_object_is_present(self):
+        db, _state, transactional = _make_tx_pair()
+        bucket = self._bucket_that_fails_writes(missing=set())
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        archive.append("genesis", "gemini-3.5-flash-lite")
+
+        assert archive.reconcile_tail() is None
+
+    def test_reconcile_is_a_noop_on_an_empty_chain(self):
+        db = MagicMock()
+        meta_ref = MagicMock()
+        meta_ref.id = "meta"
+        meta_ref.get.return_value.exists = False
+        db.collection.return_value.document.return_value = meta_ref
+        archive = EvidenceArchive(db, _mock_gcs(), transactional=lambda fn: fn)
+
+        assert archive.reconcile_tail() is None
+
+    def test_reconcile_refuses_when_the_entry_document_is_absent(self):
+        """A tail naming a sequence with no entry is not a partial write.
+
+        Re-writing here would mean inventing the entry's contents. Refuse
+        loudly instead — an archive that fabricates a record to close a gap
+        is worse than one that reports the gap.
+        """
+        db, state, transactional = _make_tx_pair()
+        bucket = self._bucket_that_fails_writes(missing={1})
+        archive = EvidenceArchive(db, bucket, transactional=transactional)
+        state["meta"] = {"tail_hash": "a" * 64, "sequence": 1}
+
+        db.collection.return_value.document.side_effect = None
+        absent = MagicMock()
+        absent.get.return_value.exists = False
+        meta = MagicMock()
+        meta.id = "meta"
+        meta.get.return_value.exists = True
+        meta.get.return_value.to_dict = lambda: dict(state["meta"])
+        db.collection.return_value.document.side_effect = lambda n: (
+            meta if n == "meta" else absent
+        )
+
+        with pytest.raises(RuntimeError, match="no entry document exists"):
+            archive.reconcile_tail()
