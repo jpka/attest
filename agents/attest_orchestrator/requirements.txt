@@ -17,3 +17,7 @@ google-cloud-firestore
 # Evidence Archive: the payload is written to GCS after the Firestore
 # transaction commits, so the chain never advances without a durable object.
 google-cloud-storage
+
+# Memory Bank: Vertex AI reasoning-engine working memory. Uses the REST API
+# via google.auth.transport.requests.AuthorizedSession — no extra SDK.
+requests

@@ -8,6 +8,7 @@
 #   ./deploy.sh infra       service accounts, Pub/Sub topic, Firestore
 #   ./deploy.sh deploy      build + deploy the agent to Cloud Run
 #   ./deploy.sh wire        push subscription + Cloud Scheduler job
+#   ./deploy.sh memory      provision the Memory Bank reasoning engine
 #   ./deploy.sh smoke       publish one message and tail the logs
 #   ./deploy.sh all         apis, infra, deploy, wire, smoke
 set -euo pipefail
@@ -19,6 +20,10 @@ REGION="${ATTEST_REGION:-us-central1}"
 # 404s them (verified Aug 18 against us-central1, us-east5, us-west1,
 # europe-west4). Cloud Run, Firestore and Pub/Sub stay in $REGION.
 MODEL_LOCATION="${ATTEST_MODEL_LOCATION:-global}"
+# Where the Memory Bank reasoning engine lives. Deliberately NOT
+# MODEL_LOCATION: reasoning engines are regional resources and do not exist in
+# `global`, so the two cannot share one variable.
+MEMORY_LOCATION="${ATTEST_MEMORY_LOCATION:-${ATTEST_REGION:-us-central1}}"
 # Keep this the model the premise-test corpus was measured on, or the battery
 # results stop being comparable with premise_test_results_v3.csv.
 MODEL="${ATTEST_MODEL:-gemini-3.5-flash-lite}"
@@ -113,6 +118,13 @@ cmd_deploy() {
   if [[ -n "${ATTEST_EVIDENCE_BUCKET:-}" ]]; then
     env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${ATTEST_EVIDENCE_BUCKET}"
   fi
+  if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
+    env_vars="${env_vars},ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID}"
+    # Reasoning engines are regional and do not exist in `global`, which is
+    # where MODEL_LOCATION points for the subject model. Pass the engine's
+    # region separately rather than letting the runtime reuse the model's.
+    env_vars="${env_vars},ATTEST_MEMORY_LOCATION=${MEMORY_LOCATION}"
+  fi
   adk deploy cloud_run \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -172,6 +184,132 @@ cmd_wire() {
     || gcloud scheduler jobs create pubsub "$JOB" "${args[@]}"
 }
 
+cmd_memory() {
+  say "Memory Bank — Vertex AI reasoning engine ($MEMORY_LOCATION)"
+  # Provisioned via REST because gcloud has no first-class reasoning-engine
+  # create carrying memoryBankConfig. The reasoning-engine service agent needs
+  # roles/aiplatform.user (granted Aug 20) to generate embeddings.
+  local base="https://${MEMORY_LOCATION}-aiplatform.googleapis.com/v1beta1"
+  local parent="projects/${PROJECT}/locations/${MEMORY_LOCATION}"
+  local token; token="$(gcloud auth print-access-token)"
+
+  # Reuse an existing engine if ATTEST_MEMORY_ENGINE_ID is already set.
+  if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
+    echo "  ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID} already set; skipping create"
+    return 0
+  fi
+
+  # Reuse by display name so a re-run does not accumulate duplicate engines.
+  # Paginated: a match on a later page must still count as found.
+  local found="" page_token="" list_url
+  while :; do
+    list_url="${base}/${parent}/reasoningEngines"
+    [[ -n "$page_token" ]] && list_url="${list_url}?pageToken=${page_token}"
+    local existing
+    existing="$(curl -s --fail-with-body \
+      -H "Authorization: Bearer ${token}" "$list_url")" \
+      || { echo "  list request failed: $existing"; return 1; }
+    local parsed_list
+    parsed_list="$(printf '%s' "$existing" | python3 -c '
+import json, sys
+doc = json.load(sys.stdin)
+match = ""
+for engine in doc.get("reasoningEngines", []):
+    if engine.get("displayName") == "attest-memory-bank":
+        match = engine["name"]
+        break
+print(match)
+print(doc.get("nextPageToken", ""))
+')" || { echo "  could not parse engine list"; return 1; }
+    found="$(printf '%s' "$parsed_list" | sed -n '1p')"
+    page_token="$(printf '%s' "$parsed_list" | sed -n '2p')"
+    [[ -n "$found" || -z "$page_token" ]] && break
+  done
+
+  local engine_name=""
+  if [[ -n "$found" ]]; then
+    engine_name="$found"
+    echo "  reusing existing engine: $engine_name"
+  else
+    local response
+    response="$(curl -s --fail-with-body -X POST \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      "${base}/${parent}/reasoningEngines" \
+      -d "{
+        \"displayName\": \"attest-memory-bank\",
+        \"description\": \"Attest surveillance working memory (Memory Bank).\",
+        \"contextSpec\": {
+          \"memoryBankConfig\": {
+            \"generationConfig\": {\"model\": \"projects/${PROJECT}/locations/${MEMORY_LOCATION}/publishers/google/models/gemini-2.5-flash\"},
+            \"similaritySearchConfig\": {\"embeddingModel\": \"projects/${PROJECT}/locations/${MEMORY_LOCATION}/publishers/google/models/text-embedding-005\"}
+          }
+        }
+      }")" \
+      || { echo "  create request failed: $response"; return 1; }
+
+    local op_name
+    op_name="$(printf '%s' "$response" | python3 -c '
+import json, sys
+doc = json.load(sys.stdin)
+if "name" not in doc:
+    sys.exit(f"create returned no operation name: {doc}")
+print(doc["name"])
+')" || return 1
+    echo "  create LRO: $op_name"
+
+    # Poll. Parse with python3, not grep: an operation that finished with an
+    # error must be reported as that error, not as a timeout.
+    #
+    # `|| rc=$?` is required, not defensive. Under `set -e` a failing command
+    # substitution aborts the script at the assignment, so a bare `rc=$?` on
+    # the next line never runs — the first not-yet-done poll (exit 3) would
+    # kill cmd_memory silently. stderr is folded into $parsed because that is
+    # where python3's sys.exit(message) text goes.
+    local waited=0
+    while (( waited < 200 )); do
+      local op
+      op="$(curl -s --fail-with-body -H "Authorization: Bearer ${token}" "${base}/${op_name}")" \
+        || { echo "  poll request failed: $op"; return 1; }
+      local parsed rc=0
+      parsed="$(printf '%s' "$op" | python3 -c '
+import json, sys
+doc = json.load(sys.stdin)
+if not doc.get("done"):
+    sys.exit(3)
+err = doc.get("error")
+if err:
+    sys.exit("operation failed: " + json.dumps(err))
+name = doc.get("response", {}).get("name", "")
+if not name:
+    sys.exit("operation done but carried no engine name: " + json.dumps(doc))
+print(name)
+' 2>&1)" || rc=$?
+      if (( rc == 0 )); then
+        engine_name="$parsed"
+        break
+      elif (( rc == 3 )); then
+        sleep 5
+        waited=$(( waited + 5 ))
+      else
+        # python3 exited with a message: that message IS the API error.
+        echo "  $parsed"
+        return 1
+      fi
+    done
+    [[ -n "$engine_name" ]] || { echo "  engine creation did not finish within ${waited}s"; return 1; }
+    echo "  engine: $engine_name"
+  fi
+
+  local engine_id="${engine_name##*/}"
+  # Export so `./deploy.sh all` wires it into cmd_deploy in a single pass,
+  # the way cmd_infra exports ATTEST_EVIDENCE_BUCKET.
+  export ATTEST_MEMORY_ENGINE_ID="$engine_id"
+  echo "  ATTEST_MEMORY_ENGINE_ID=${engine_id} (exported for this run)"
+  echo "  For a standalone ./deploy.sh deploy later, export it yourself:"
+  echo "    export ATTEST_MEMORY_ENGINE_ID=${engine_id}"
+}
+
 cmd_smoke() {
   say "Publishing one test message"
   gcloud pubsub topics publish "$TOPIC" --project "$PROJECT" \
@@ -191,7 +329,8 @@ case "${1:-all}" in
   infra)  cmd_infra ;;
   deploy) cmd_deploy ;;
   wire)   cmd_wire ;;
+  memory) cmd_memory ;;
   smoke)  cmd_smoke ;;
-  all)    cmd_apis; cmd_infra; cmd_deploy; cmd_wire; cmd_smoke ;;
+  all)    cmd_apis && cmd_infra && cmd_memory && cmd_deploy && cmd_wire && cmd_smoke ;;
   *)      sed -n '2,14p' "$0"; exit 1 ;;
 esac
