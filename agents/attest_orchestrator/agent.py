@@ -14,16 +14,12 @@ content-addressed so a run can name the roster version it was scored against.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import os
-import threading
-from datetime import UTC, datetime
 
 from google.adk.agents import Agent
 
-from . import registry, scorer
+from . import evidence_archive, registry, scorer
 
 logger = logging.getLogger(__name__)
 
@@ -69,28 +65,12 @@ def list_covered_firms() -> list[dict]:
     ]
 
 
-# The chain tail lives in process only until Aug 24-25 swaps `_chain_tail` and
-# `_commit` for a Firestore transaction. It does NOT survive a restart or a second
-# Cloud Run instance, so the chain today is per-instance. What it does establish
-# now is the property that matters: linkage is computed by the archive, never
-# supplied by the caller. The lock makes read-tail-then-commit atomic within the
-# process, which is the same invariant the Firestore transaction will enforce
-# across instances.
-_TAIL_LOCK = threading.Lock()
-_TAIL = ""
+def _archive() -> evidence_archive.EvidenceArchive:
+    """Build the Evidence Archive from environment.
 
-
-def _chain_tail() -> str:
-    """The `entry_hash` of the most recent entry, or "" if the chain is empty."""
-    return _TAIL
-
-
-def _commit(entry: dict) -> None:
-    """Persist one entry and advance the tail. Aug 24-25: append-only Firestore
-    write plus a GCS object, in a transaction that rejects a stale tail."""
-    global _TAIL
-    logger.info("evidence.append %s", json.dumps(entry))
-    _TAIL = entry["entry_hash"]
+    Lazy so importing the agent module does not require credentials.
+    """
+    return evidence_archive.EvidenceArchive.from_env()
 
 
 def append_evidence(payload: str) -> dict:
@@ -111,23 +91,7 @@ def append_evidence(payload: str) -> dict:
     Returns:
         The chain entry. Persist this verbatim; never rewrite it.
     """
-    with _TAIL_LOCK:
-        prev_hash = _chain_tail()
-        timestamp = datetime.now(UTC).isoformat()
-        body = json.dumps(
-            {"payload": payload, "prev_hash": prev_hash, "timestamp": timestamp},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        entry = {
-            "entry_hash": hashlib.sha256(body.encode()).hexdigest(),
-            "prev_hash": prev_hash,
-            "timestamp": timestamp,
-            "payload_sha256": hashlib.sha256(payload.encode()).hexdigest(),
-            "model_id": MODEL,
-        }
-        _commit(entry)
-    return entry
+    return _archive().append(payload, MODEL)
 
 
 root_agent = Agent(

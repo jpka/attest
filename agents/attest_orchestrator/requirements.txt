@@ -13,3 +13,7 @@ opentelemetry-instrumentation-google-genai
 # Battery Registry: ground truth is read from Firestore at request time, not
 # from a bundled file. Not pulled in by google-adk's default install.
 google-cloud-firestore
+
+# Evidence Archive: the payload is written to GCS after the Firestore
+# transaction commits, so the chain never advances without a durable object.
+google-cloud-storage
