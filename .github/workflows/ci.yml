@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install pytest ruff
+        run: pip install pytest ruff google-cloud-firestore google-cloud-storage
       - name: Ruff
         run: ruff check ingest tests local_test.py conftest.py agents/attest_orchestrator/evidence_archive.py
       - name: Pytest
