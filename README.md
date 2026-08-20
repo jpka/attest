@@ -48,17 +48,18 @@ Three adjustments were needed and are baked into `deploy.sh`:
 
 ```
 agents/attest_orchestrator/
-    agent.py            root_agent + 3 tools
-    registry.py         Battery Registry — content-addressed ground truth
-    ground_truth.json   fictionalized roster; the reviewable source
-    requirements.txt    extra deps (google-adk comes from the image)
+    agent.py              root_agent + 3 tools
+    registry.py           Battery Registry — content-addressed ground truth
+    evidence_archive.py   append-only SHA-256 hash chain on Firestore + GCS
+    ground_truth.json     fictionalized roster; the reviewable source
+    requirements.txt      extra deps (google-adk comes from the image)
 ingest/
-    adv_schema.py       Form ADV Part 1A column map — the ground-truth schema
-    select_firms.py     SEC bulk roster -> real selection (gitignored, never committed)
-    anonymize.py        real selection -> fictionalized ground_truth.json
-deploy.sh               idempotent gcloud driver
-publish_registry.py     ground_truth.json -> Firestore
-local_test.py           run everything locally first
+    adv_schema.py         Form ADV Part 1A column map — the ground-truth schema
+    select_firms.py       SEC bulk roster -> real selection (gitignored, never committed)
+    anonymize.py          real selection -> fictionalized ground_truth.json
+deploy.sh                 idempotent gcloud driver
+publish_registry.py       ground_truth.json -> Firestore
+local_test.py             run everything locally first
 ```
 
 ## Run it locally first
@@ -154,22 +155,9 @@ these exact record shapes. The public repo never names a real firm.
 a primary business name; name-keying silently merges them. Four of the surviving premise-test
 findings are models confusing exactly these entities.
 
-**`append_evidence` is the shape the Evidence Archive keeps**, not a placeholder to be
-redesigned. Each entry carries `sha256(payload)`, `prev_hash`, timestamp and model id, so any
-retroactive edit is detectable. Aug 24–25 swaps `_chain_tail`/`_commit` for an append-only
-Firestore write plus a GCS object; the entry structure does not change.
+**`append_evidence` is now Firestore + GCS**, not an in-process dict. Each entry carries `sha256(payload)`, `prev_hash`, a monotonic `sequence` number, timestamp and model id, so any retroactive edit is detectable. A pure hash chain detects edits but not *truncation* — dropping the last N entries leaves a valid chain. The sequence number closes that: a gap is evidence of truncation. The tail is stored in Firestore `evidence_chain/meta` and advanced inside a transaction with optimistic concurrency — two Cloud Run instances cannot fork the chain. The payload is written to GCS after the transaction commits, so the chain never advances without a durable object backing it.
 
-**The agent cannot supply the linkage.** `append_evidence` takes only a payload; it reads the
-tail itself and computes `prev_hash`. The earlier version accepted `prev_hash` as a tool
-argument, which let the model fork or reset the chain by passing a stale value — undetectable
-downstream, and the exact failure the product exists to prevent. `local_test.py` asserts the
-parameter stays gone. Until Aug 24–25 the tail is in-process, so the chain is per-instance and
-does not survive a restart; the Firestore transaction fixes durability and must also reject a
-stale tail rather than overwrite it.
-
-**Open question for Aug 24–25:** a pure hash chain detects edits but not *truncation* — dropping
-the last N entries leaves a valid chain. A monotonic sequence number in the entry closes that.
-It is one field, and it is cheaper to add before the archive is written than after.
+The agent cannot supply the linkage. `append_evidence` takes only a payload; it reads the tail itself and computes `prev_hash`. The earlier version accepted `prev_hash` as a tool argument, which let the model fork or reset the chain by passing a stale value — undetectable downstream, and the exact failure the product exists to prevent. `local_test.py` asserts the parameter stays gone.
 
 **Memory Bank stays separate from the archive.** Memory Bank is the agent's working memory:
 semantic, mutable. The Evidence Archive is the legal record: append-only, hash-chained, never

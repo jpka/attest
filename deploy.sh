@@ -85,6 +85,22 @@ cmd_infra() {
   say "Firestore (Native mode). Skips if a database already exists."
   gcloud firestore databases describe --project "$PROJECT" >/dev/null 2>&1 \
     || gcloud firestore databases create --project "$PROJECT" --location "$REGION" --type firestore-native
+
+  say "GCS bucket for the Evidence Archive"
+  local bucket="${PROJECT}-evidence"
+  if gsutil ls -b "gs://${bucket}" >/dev/null 2>&1; then
+    echo "  bucket ${bucket} exists"
+  else
+    gsutil mb -p "$PROJECT" -l "$REGION" "gs://${bucket}"
+    echo "  created ${bucket}"
+  fi
+  gsutil uniformbucketlevelaccess set on "gs://${bucket}"
+  gcloud storage buckets add-iam-policy-binding "gs://${bucket}" \
+    --member "serviceAccount:${RUNTIME_SA_EMAIL}" --role roles/storage.objectCreator \
+    --quiet >/dev/null
+  echo "  granted storage.objectCreator to ${RUNTIME_SA_EMAIL}"
+  # Export so the deploy step picks it up
+  EVIDENCE_BUCKET="$bucket"
 }
 
 cmd_deploy() {
@@ -92,6 +108,10 @@ cmd_deploy() {
   # --trigger_sources=pubsub registers POST /apps/{app}/trigger/pubsub
   # --trace_to_cloud + --otel_to_cloud give the Agent Observability requirement.
   # Everything after -- is passed straight to `gcloud run deploy`.
+  local env_vars="GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${MODEL_LOCATION},ATTEST_MODEL=${MODEL}"
+  if [[ -n "${EVIDENCE_BUCKET:-}" ]]; then
+    env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${EVIDENCE_BUCKET}"
+  fi
   adk deploy cloud_run \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -108,7 +128,7 @@ cmd_deploy() {
     --min-instances 0 \
     --max-instances 3 \
     --memory 1Gi \
-    --set-env-vars "GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${MODEL_LOCATION},ATTEST_MODEL=${MODEL}"
+    --set-env-vars "$env_vars"
 }
 
 service_url() {
