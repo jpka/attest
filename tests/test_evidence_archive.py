@@ -172,7 +172,6 @@ def test_gcs_immutable_write_uses_if_generation_match():
     archive = EvidenceArchive(db, bucket, transactional=transactional)
     archive.append("payload", "gemini-3.5-flash-lite")
 
-    # CR: verify if_generation_match=0 was used
     args, kwargs = blob.upload_from_string.call_args
     assert kwargs.get("if_generation_match") == 0
 
@@ -197,7 +196,6 @@ def test_hash_is_deterministic():
     archive = EvidenceArchive(db, _mock_gcs(), transactional=transactional)
     entry = archive.append("x", "gemini-3.5-flash-lite")
 
-    # Use independent oracle, not _compute_hash
     expected = _independent_hash("x", "", entry["timestamp"], 1, "gemini-3.5-flash-lite")
     assert entry["entry_hash"] == expected
 
@@ -241,6 +239,15 @@ def test_verify_entry_returns_false_on_missing_fields():
     assert archive.verify_entry({}) is False
     assert archive.verify_entry({"payload": "x"}) is False
     assert archive.verify_entry(None) is False
+    # CR: entry with all required fields except entry_hash
+    incomplete = {
+        "payload": "x",
+        "prev_hash": "",
+        "timestamp": "2024-01-01T00:00:00+00:00",
+        "sequence": 1,
+        "model_id": "gemini-3.5-flash-lite",
+    }
+    assert archive.verify_entry(incomplete) is False
 
 
 def test_gcs_object_already_exists_idempotent():
@@ -249,13 +256,10 @@ def test_gcs_object_already_exists_idempotent():
     bucket = MagicMock()
     blob = MagicMock()
 
-    # Simulate: blob.upload_from_string fails because object already exists
-    # (412 PreconditionFailed / conditionNotMet)
     blob.upload_from_string.side_effect = Exception(
         "412 PreconditionFailed: conditionNotMet"
     )
 
-    # Use a fixed timestamp so we can compute the expected hash
     fixed_timestamp = "2026-08-20T16:00:00+00:00"
     with patch("agents.attest_orchestrator.evidence_archive.datetime") as mock_dt:
         mock_dt.now.return_value = datetime.fromisoformat(fixed_timestamp)
@@ -275,7 +279,6 @@ def test_gcs_object_already_exists_idempotent():
         archive = EvidenceArchive(db, bucket, transactional=transactional)
         entry = archive.append("payload", "gemini-3.5-flash-lite")
 
-    # Should succeed — the existing object matches
     assert entry["sequence"] == 1
     assert entry["entry_hash"] == our_hash
 
@@ -289,7 +292,6 @@ def test_gcs_object_exists_with_different_hash_raises():
     blob.upload_from_string.side_effect = Exception(
         "412 PreconditionFailed: conditionNotMet"
     )
-    # Return an object with a DIFFERENT hash
     blob.download_as_text.return_value = json.dumps({
         "entry_hash": "different_hash",
         "payload": "other",
@@ -303,8 +305,8 @@ def test_gcs_object_exists_with_different_hash_raises():
         archive.append("payload", "gemini-3.5-flash-lite")
 
 
-def test_idempotent_retry_after_partial_failure():
-    """If Firestore committed but GCS failed, retry is idempotent."""
+def test_idempotent_retry_pre_transaction_failure():
+    """If Firestore tx fails before GCS write, retry produces the same sequence."""
     db, state, transactional = _make_tx_pair()
     bucket = MagicMock()
     blob = MagicMock()
