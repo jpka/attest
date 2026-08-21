@@ -111,34 +111,41 @@ SCOPE_NAME_CRD = re.compile(r"(?i)crd")
 
 def _advance_bracket_state(
     line: str, depth: int, triple: str | None
-) -> tuple[int, str | None]:
-    """Return bracket depth and open-triple-quote state after consuming ``line``.
+) -> tuple[int, str | None, bool]:
+    """Return continuation state after consuming ``line``.
 
-    Indentation only delimits scope when Python is not inside an implicit
-    continuation. Without this, a value dedented inside a parenthesised literal
-    pops the enclosing scope and escapes the CRD-scope heuristic entirely::
+    Returns ``(depth, open_triple_quote, ends_with_explicit_continuation)``.
+    Indentation only delimits scope when Python is not inside a continuation,
+    and there are three ways to be inside one. Without all three, a value
+    dedented past its enclosing block pops the scope before it is scanned and
+    escapes the CRD-scope heuristic entirely::
 
         class TestCRDValidation:
             values = (
         9999999999,
             )
 
-    String and comment spans are skipped, so a bracket inside either does not
-    move the count.
+        class TestCRDValidation:
+            values = \
+        9999999999,
+
+    Both are valid Python. String and comment spans are skipped, so neither a
+    bracket nor a backslash inside one is counted.
     """
     i = 0
+    explicit = False
     while i < len(line):
         if triple is not None:
             end = line.find(triple, i)
             if end == -1:
-                return depth, triple
+                return depth, triple, False
             i = end + 3
             triple = None
             continue
 
         char = line[i]
         if char == "#":
-            break
+            return depth, triple, False
 
         quote3 = line[i : i + 3]
         if quote3 in ('"""', "'''"):
@@ -158,13 +165,15 @@ def _advance_bracket_state(
                 i += 1
             continue
 
-        if char in "([{":
+        if char == "\\" and i == len(line) - 1:
+            explicit = True
+        elif char in "([{":
             depth += 1
         elif char in ")]}":
             depth = max(0, depth - 1)
         i += 1
 
-    return depth, triple
+    return depth, triple, explicit
 
 
 SCOPE_DECL = re.compile(
@@ -187,10 +196,11 @@ def scan(text: str) -> list[tuple[int, str, str]]:
     scopes: list[tuple[int, str]] = []
     depth = 0
     triple: str | None = None
+    explicit = False
 
     for lineno, line in enumerate(text.splitlines(), start=1):
-        continued = depth > 0 or triple is not None
-        depth, triple = _advance_bracket_state(line, depth, triple)
+        continued = depth > 0 or triple is not None or explicit
+        depth, triple, explicit = _advance_bracket_state(line, depth, triple)
         # Pop on any dedent, not only when the next declaration appears: a
         # module-level statement after a CRD-named class is out of that scope
         # and must not inherit it.
@@ -386,10 +396,42 @@ def test_scope_survives_an_implicit_continuation() -> None:
     assert found == {"9999999999"}, found
 
 
+
+BACKSLASH = chr(92)
+
+
 def test_brackets_inside_strings_and_comments_do_not_hold_scope_open() -> None:
     for sample in (
         'class TestCRDValidation:\n    s = "("\n\nTIMEOUT_SECONDS = 30',
         "class TestCRDValidation:\n    pass  # (\n\nTIMEOUT_SECONDS = 30",
         'class TestCRDValidation:\n    """doc (unclosed"""\n\nTIMEOUT_SECONDS = 30',
+    ):
+        assert not scan(sample), sample
+
+
+def test_scope_survives_an_explicit_backslash_continuation() -> None:
+    """A trailing backslash joins physical lines before indentation applies.
+
+    The third continuation form, after brackets and triple-quotes. Verified
+    against the interpreter rather than reasoned about: this compiles, and the
+    value sits at column 0, so a dedent-only scanner drops the class scope
+    before ever reaching it.
+    """
+    sample = (
+        "class TestCRDValidation:\n    values = " + BACKSLASH + "\n9999999999,\n"
+    )
+    assert compile(sample, "<sample>", "exec")  # it really is valid Python
+    found = {value for _, form, value in scan(sample) if form == "crd-mention"}
+    assert found == {"9999999999"}, found
+
+
+def test_backslash_in_a_comment_or_string_does_not_hold_scope_open() -> None:
+    for sample in (
+        "class TestCRDValidation:\n    pass  # trailing "
+        + BACKSLASH
+        + "\n\nTIMEOUT_SECONDS = 30",
+        'class TestCRDValidation:\n    s = "'
+        + BACKSLASH * 2
+        + '"\n\nTIMEOUT_SECONDS = 30',
     ):
         assert not scan(sample), sample
