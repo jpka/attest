@@ -279,7 +279,7 @@ class TestPurge:
             ),
             CONFIG,
         )
-        assert bank.purge_memories('scope.crd="900001"', force=True) == 7
+        assert bank.purge_memories('scope.crd="900001"', force=True) == 7  # not-a-crd
 
     def test_inline_done_error_raises(self):
         """An inline-done operation carrying an error must not be treated as success."""
@@ -316,10 +316,11 @@ class TestCRDValidation:
     # Some real SEC registrants hold very short CRDs. Any such value would be
     # functionally identical as a validation fixture, and using one would put a
     # real registrant identifier back into published history — exactly what the
-    # pre-publication content sweep exists to keep out. "7" carries the same
-    # "short numeric string" test intent. See test_no_real_crd_in_tree.py,
+    # pre-publication content sweep exists to keep out. "0" carries the same
+    # "short numeric string" test intent and cannot identify a registrant,
+    # because CRD numbering starts at 1. See test_no_real_crd_in_tree.py,  # not-a-crd
     # which fails the build if a real CRD reaches the working tree.
-    @pytest.mark.parametrize("value", ["900001", " 900001 ", "7"])
+    @pytest.mark.parametrize("value", ["900001", " 900001 ", "0"])
     def test_accepts_numeric(self, value):
         assert _validate_crd(value) == value.strip()
 

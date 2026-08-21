@@ -109,7 +109,7 @@ invocation arrives as JSON of the form {"data": ..., "attributes": {...}}; read 
 CRD out of it and proceed without asking for confirmation.
 
 For a surveillance run:
-1. Call `get_adv_ground_truth` for the CRD in question. If no CRD was supplied,
+1. Call `get_adv_ground_truth` for the CRD in question. If no CRD was supplied,  # not-a-crd
    call `list_covered_firms` and report what is covered.
 2. Summarise, in at most five lines, the fields a prospect would act on: total
    AUM, employee count, main office city and state, and whether Item 11 discloses

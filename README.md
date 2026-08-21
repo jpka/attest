@@ -309,7 +309,7 @@ in published history by design, listed here in full:
 
 | Where | What | Why it stays |
 |---|---|---|
-| Stored diff of PR #3 | A CRD-validation fixture in `tests/test_memory_bank.py` carried a real registrant's CRD. The forward fix landed in `e12969a`; a `filter-repo` pass cleared it from all reachable commits. | A pull request's stored diff survives any force-push. Only a repository rebuild would clear it, and that would destroy PRs #1–#4 with their review threads and CI history. | <!-- not-a-crd -->
+| Stored diff of PR #3 | A CRD-validation fixture in `tests/test_memory_bank.py` carried a real registrant's CRD. The forward fix landed in `e12969a`; a `filter-repo` pass cleared it from all reachable commits. | A pull request's stored diff survives any force-push. Only a repository rebuild would clear it, and that would destroy PRs #1–#4 with their review threads and CI history. <!-- not-a-crd --> |
 | Commits `7dc2a3c`…`3dace00` | The comment written to explain that fix named real CRDs itself. Removed from the working tree in this change. | Same reason. It is reachable history; clearing it means a second rewrite of an already-public repository, which does not unpublish anything. |
 
 Neither instance names a firm or asserts anything about one; both are bare integers in test

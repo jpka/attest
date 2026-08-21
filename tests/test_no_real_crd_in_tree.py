@@ -23,21 +23,28 @@ import pytest
 SELF = Path(__file__).resolve()
 REPO_ROOT = SELF.parent.parent
 
+# Every value below is in the 9000-prefixed fictional block. That prefix is the
+# invariant test_allowlist_is_entirely_fictional pins, and it is what makes the
+# allowlist auditable without naming a single real registrant.
+
 # The synthetic roster. CRDs 900001-900005 are not assigned to any registrant.
 ROSTER_CRDS = {f"90000{n}" for n in range(1, 6)}
 
-# The out-of-roster probe value, and the 10000xx block roster_factory.py builds
-# fixtures from. Both are above the assigned CRD range.
-SYNTHETIC_CRDS = {"900006", "900099"} | {f"100000{n}" for n in range(1, 10)}
+# The out-of-roster probe value, the unknown-CRD probe in local_test.py, and the
+# 10-digit block the roster fixtures are built from. The fixtures were 100000x
+# until CodeRabbit pointed out that seven-digit CRDs are well inside the range
+# assigned to individuals -- an allowlist entry nobody had verified was
+# fictional, which is the same error this module exists to catch, one level up.
+SYNTHETIC_CRDS = {"900006", "900099"} | {f"900000000{n}" for n in range(1, 10)}
 
-# Obviously-synthetic short fixtures for the "a short numeric string is
-# accepted" validation case.
-SHORT_FIXTURES = {"0", "1", "7"}
+# Zero is not an assigned registration number -- CRD numbering starts at 1 -- so
+# it cannot identify a registrant. It is the one short fixture kept, to catch a
+# future minimum-length rule in _validate_crd, which today only checks isdigit.
+SHORT_FIXTURES = {"0"}
 
-# Sentinels used by this module's own detection tests. Ten digits, which is far
-# outside any assigned CRD range, so they are safe to write down -- the fixtures
-# for a check like this must never be real values, which is the mistake that
-# put a real CRD into the tests this module now guards.
+# Sentinels for this module's own detection tests. Deliberately NOT allowlisted
+# -- the detection tests assert they are flagged -- and deliberately not
+# 9000-prefixed, so they can never be confused with a fixture value.
 DETECTOR_SENTINELS = {"9999999999", "8888888888", "7777777777"}
 
 ALLOWED = ROSTER_CRDS | SYNTHETIC_CRDS | SHORT_FIXTURES
@@ -102,7 +109,9 @@ def tracked_text_files() -> list[Path]:
 # A scope name says CRD without word boundaries around it: TestCRDValidation.
 SCOPE_NAME_CRD = re.compile(r"(?i)crd")
 
-SCOPE_DECL = re.compile(r"^(?P<indent>\s*)(?:class|def)\s+(?P<name>\w+)")
+SCOPE_DECL = re.compile(
+    r"^(?P<indent>\s*)(?:class|(?:async\s+)?def)\s+(?P<name>\w+)"
+)
 
 
 def scan(text: str) -> list[tuple[int, str, str]]:
@@ -120,12 +129,16 @@ def scan(text: str) -> list[tuple[int, str, str]]:
     scopes: list[tuple[int, str]] = []
 
     for lineno, line in enumerate(text.splitlines(), start=1):
-        decl = SCOPE_DECL.match(line)
-        if decl:
-            indent = len(decl.group("indent"))
+        # Pop on any dedent, not only when the next declaration appears: a
+        # module-level statement after a CRD-named class is out of that scope
+        # and must not inherit it.
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
             while scopes and scopes[-1][0] >= indent:
                 scopes.pop()
-            scopes.append((indent, decl.group("name")))
+            decl = SCOPE_DECL.match(line)
+            if decl:
+                scopes.append((indent, decl.group("name")))
 
         for m in CRD_POSITION.finditer(line):
             value = next(g for g in m.groups() if g is not None)
@@ -243,3 +256,50 @@ def test_detector_fixtures_are_synthetic() -> None:
     }
     permitted = DETECTOR_SENTINELS | ROSTER_CRDS
     assert values <= permitted, values - permitted
+
+
+def test_allowlist_is_entirely_fictional() -> None:
+    """Pin the allowlist itself, which nothing else checks.
+
+    The 100000x fixture block sat here until review pointed out that
+    seven-digit CRDs are well inside the range assigned to individuals. An
+    allowlist entry nobody verified was fictional is the same failure this
+    module exists to catch, one level up -- so the invariant is mechanical:
+    every allowlisted value carries the 9000 fictional prefix.
+    """
+    unexplained = {v for v in ALLOWED if not v.startswith("9000")} - SHORT_FIXTURES
+    assert not unexplained, unexplained
+    assert all(v.startswith("9000") for v in ROSTER_CRDS | SYNTHETIC_CRDS)
+    # The detector's own sentinels must never become allowlisted, or the
+    # detection tests would silently stop detecting.
+    assert not (ALLOWED & DETECTOR_SENTINELS)
+
+
+def test_module_level_statement_after_crd_scope_is_not_inherited() -> None:
+    """A dedent ends the scope even when no new declaration follows it.
+
+    The first version popped the scope stack only when the next class or def
+    appeared, so a module-level constant after a CRD-named class inherited that
+    scope and failed the build for no reason.
+    """
+    sample = "\n".join(
+        [
+            "class TestCRDValidation:",
+            "    pass",
+            "",
+            "TIMEOUT_SECONDS = 30",
+        ]
+    )
+    assert not scan(sample)
+
+
+def test_async_def_opens_a_crd_scope() -> None:
+    """``async def`` declares a scope too; the first SCOPE_DECL missed it."""
+    sample = "\n".join(
+        [
+            "async def fetch_crd_record(client):",
+            '    return await client.get("9999999999")',
+        ]
+    )
+    found = {value for _, form, value in scan(sample) if form == "crd-mention"}
+    assert found == {"9999999999"}, found
