@@ -302,24 +302,41 @@ review — stays in a private repository. It contains real registrant data, incl
 firm's Item 11 disciplinary disclosure, and is the evidence base the findings were measured
 on. It is available on request for judging.
 
-**One known deviation, stated plainly.** The pre-publication sweep is scoped by *content*
-rather than by the files an inspector expected to be affected — that is how §2a's leak was
-found — and it covers the full reachable history. That sweep returned one hit that survives
-in reachable history by design: `"38"` in a CRD-validation fixture in `tests/test_memory_bank.py`,
-carried in the stored diff of PR #3.
+**Known exceptions, enumerated.** The pre-publication sweep is scoped by *content*
+rather than by the files an inspector expected to be affected — that is how the first leak
+was found — and it covers the full reachable history. It returns two instances that survive
+in published history by design, listed here in full:
 
-CRD 38 is a real SEC registrant's number. What it is *in this file* is a bare integer testing
-"a short numeric string is accepted" — the same role `"7"` plays now. It names no firm and
-asserts nothing about one. The forward fix landed in commit `e12969a`; the surviving instances
-are in the PR #3 diff, which a branch rewrite cannot touch — a pull request's stored diff
-survives any force-push, which is the reason §2 renamed the original repo rather than rewriting
-it.
+| Where | What | Why it stays |
+|---|---|---|
+| Stored diff of PR #3 | A CRD-validation fixture in `tests/test_memory_bank.py` carried a real registrant's CRD. The forward fix landed in `e12969a`; a `filter-repo` pass cleared it from all reachable commits. | A pull request's stored diff survives any force-push. Only a repository rebuild would clear it, and that would destroy PRs #1–#4 with their review threads and CI history. <!-- not-a-crd --> |
+| Commits `7dc2a3c`…`3dace00` | The comment written to explain that fix named real CRDs itself. Removed from the working tree in this change. | Same reason. It is reachable history; clearing it means a second rewrite of an already-public repository, which does not unpublish anything. |
 
-The deviation was accepted rather than the repo rebuilt, for one stated reason: the PR history
-is the dated provenance trail this repository exists to produce, and rebuilding to remove a
-harmless fixture integer would trade that evidence for symbolic purity. The rule going forward
-is the unqualified one — no real CRD in published history — and this is the single documented
-exception, with its reason.
+Neither instance names a firm or asserts anything about one; both are bare integers in test
+scaffolding and prose. They are recorded because the rule is unqualified, and a rule carrying
+silent exceptions for the cases someone judged harmless does not survive its next application.
+
+**How the second one happened, because it is the more instructive of the two.** The commit
+whose stated purpose was removing a real CRD from the test fixtures added a comment naming
+several more, in the same file. The `filter-repo` pass that followed swept for the *quoted*
+fixture literal and cleared it everywhere; the comment used the bare, unquoted form and was
+untouched. Scoping a content sweep to the form you expect the value to take is the same
+mistake as scoping it to the files you expect to be affected, one level down.
+
+**The rule, restated so it is enforceable.** "No real registrant identifier in published
+history" is no longer achievable — the two rows above cannot be cleared without costs worse
+than the exposure. A rule that is permanently violated is not a rule, so it is split into
+three that hold:
+
+1. **The working tree contains no real registrant identifier.** Enforced by
+   `tests/test_no_real_crd_in_tree.py`, which fails the build on either form — CRD-position
+   (`"crd": "<n>"`) or bare integer — and is the check that would have caught `7dc2a3c` on
+   the day it landed.
+2. **Reachable history and stored PR diffs contain exactly the two instances above.**
+   Re-derived, not assumed, whenever the sweep is run.
+3. **The forward check runs pre-publication, against the diff**, not retrospectively against
+   history. Retrospective sweeps found four separate things this repository had already
+   published; each was scoped by something the next one had to widen.
 
 ---
 

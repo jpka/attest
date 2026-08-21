@@ -13,10 +13,10 @@ def _make_firms(count):
     firms = []
     for i in range(count):
         firms.append({
-            "crd": f"{1000000 + i}",
+            "crd": f"{9000000000 + i}",  # not-a-crd
             "name": f"REAL FIRM {i}",
             "legal_name": f"REAL LEGAL {i}",
-            "sec_number": f"801-{1000000 + i}",
+            "sec_number": f"801-{9000000000 + i}",
             "city": "REAL CITY",
             "state": "REAL STATE",
             "country": "REAL COUNTRY",

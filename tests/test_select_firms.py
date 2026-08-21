@@ -45,13 +45,13 @@ def test_selects_one_of_each_bucket(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
-        row(crd="1000006", name="FIRM F", aum="50000000"),
-        row(crd="1000007", name="FIRM G", status_date="01/01/2024"),
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="FIRM F", aum="50000000"),  # not-a-crd
+        row(crd="9000000007", name="FIRM G", status_date="01/01/2024"),  # not-a-crd
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
@@ -59,7 +59,7 @@ def test_selects_one_of_each_bucket(tmp_path):
         "clean", "clean", "disciplinary", "recent", "thin_web",
     ]
     assert [f["crd"] for f in firms] == [
-        "1000001", "1000002", "1000003", "1000004", "1000005",
+        "9000000001", "9000000002", "9000000003", "9000000004", "9000000005",
     ]
     assert summary["scanned"] == 5
     assert out.read_text(encoding="utf-8").endswith("\n")
@@ -69,12 +69,12 @@ def test_short_row_skipped_and_counted(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="TRUNCATED FIRM")[:20],
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="TRUNCATED FIRM")[:20],  # not-a-crd
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
@@ -85,7 +85,7 @@ def test_short_row_skipped_and_counted(tmp_path):
 def test_only_short_rows_raises_bucket_shortfall(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
-    rows = [row(crd="1000001", name="SHORT FIRM")[:20] for _ in range(3)]
+    rows = [row(crd="9000000001", name="SHORT FIRM")[:20] for _ in range(3)]  # not-a-crd
     write_roster(roster, rows)
     with pytest.raises(BucketShortfallError):
         run(str(roster), str(out))
@@ -97,52 +97,52 @@ def test_empty_crd_skipped(tmp_path):
     out = tmp_path / "out.json"
     rows = [
         row(crd="", name="NO CRD FIRM"),
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
-    assert summary["no_crd"] == 1
-    assert len(firms) == 5
+    assert summary["no_crd"] == 1  # not-a-crd
+    assert len(firms) == 5  # not-a-crd
 
 
 def test_wrong_form_version_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="OLD FORM FIRM", form_version="03/2020"),
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="OLD FORM FIRM", form_version="03/2020"),  # not-a-crd
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
     assert summary["form_version"] == 1
-    assert "1000006" not in [f["crd"] for f in firms]
+    assert "9000000006" not in [f["crd"] for f in firms]
 
 
 def test_inactive_status_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="TERMINATED FIRM", status="Terminated"),
-        row(crd="1000007", name="BLANK STATUS FIRM", status=""),
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="TERMINATED FIRM", status="Terminated"),
+        row(crd="9000000007", name="BLANK STATUS FIRM", status=""),
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
     assert summary["inactive_status"] == 2
-    assert "1000006" not in [f["crd"] for f in firms]
-    assert "1000007" not in [f["crd"] for f in firms]
+    assert "9000000006" not in [f["crd"] for f in firms]
+    assert "9000000007" not in [f["crd"] for f in firms]
     assert len(firms) == 5
 
 
@@ -150,35 +150,35 @@ def test_aum_out_of_band_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="SMALL FIRM", aum="50000000"),
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="SMALL FIRM", aum="50000000"),  # not-a-crd
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
     assert summary["aum_out_of_band"] == 1
-    assert "1000006" not in [f["crd"] for f in firms]
+    assert "9000000006" not in [f["crd"] for f in firms]
 
 
 def test_duplicate_crd_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000001", name="FIRM A DUPLICATE"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000001", name="FIRM A DUPLICATE"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, _ = run(str(roster), str(out))
     crds = [f["crd"] for f in firms]
-    assert crds.count("1000001") == 1
-    assert len(firms) == 5
+    assert crds.count("9000000001") == 1  # not-a-crd
+    assert len(firms) == 5  # not-a-crd
 
 
 def test_future_dated_registration_not_recent():
@@ -191,17 +191,17 @@ def test_invalid_status_date_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="BAD DATE FIRM", status_date="not-a-date"),
-        row(crd="1000001", name="FIRM A"),
-        row(crd="1000002", name="FIRM B"),
-        row(crd="1000003", name="FIRM C", disciplinary=True),
-        row(crd="1000004", name="FIRM D", status_date=recent_date()),
-        row(crd="1000005", name="FIRM E", website_count="0"),
+        row(crd="9000000006", name="BAD DATE FIRM", status_date="not-a-date"),
+        row(crd="9000000001", name="FIRM A"),
+        row(crd="9000000002", name="FIRM B"),
+        row(crd="9000000003", name="FIRM C", disciplinary=True),
+        row(crd="9000000004", name="FIRM D", status_date=recent_date()),
+        row(crd="9000000005", name="FIRM E", website_count="0"),
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
     assert summary["invalid_status_date"] == 1
-    assert "1000006" not in [f["crd"] for f in firms]
+    assert "9000000006" not in [f["crd"] for f in firms]
     assert len(firms) == 5
 
 
@@ -215,7 +215,7 @@ def test_classify_buckets():
 def test_partial_bucket_shortfall_exits_nonzero(tmp_path, monkeypatch):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
-    write_roster(roster, [row(crd="1000001", name="FIRM A")])
+    write_roster(roster, [row(crd="9000000001", name="FIRM A")])
     with pytest.raises(BucketShortfallError):
         run(str(roster), str(out))
     monkeypatch.setattr(sys, "argv", ["select_firms", str(roster), "--out", str(out)])
