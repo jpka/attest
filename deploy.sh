@@ -113,8 +113,9 @@ cmd_infra() {
     --member "serviceAccount:${RUNTIME_SA_EMAIL}" --role roles/storage.objectViewer \
     --quiet >/dev/null
   echo "  granted storage.objectViewer to ${RUNTIME_SA_EMAIL} (reconcile needs read)"
-  # CR: export for the deploy step — but cmd_deploy also computes this
-  # from $PROJECT, so a standalone ./deploy.sh deploy works without infra.
+  # Export for this process — cmd_deploy re-derives the same default from
+  # $PROJECT when run standalone (see cmd_deploy), so this is a same-process
+  # convenience, not the only place the value comes from.
   export ATTEST_EVIDENCE_BUCKET="$bucket"
 }
 
@@ -124,9 +125,11 @@ cmd_deploy() {
   # --trace_to_cloud + --otel_to_cloud give the Agent Observability requirement.
   # Everything after -- is passed straight to `gcloud run deploy`.
   local env_vars="GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${MODEL_LOCATION},ATTEST_MODEL=${MODEL}"
-  if [[ -n "${ATTEST_EVIDENCE_BUCKET:-}" ]]; then
-    env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${ATTEST_EVIDENCE_BUCKET}"
-  fi
+  # Same default cmd_infra uses. A standalone `./deploy.sh deploy` (no infra
+  # in this shell) must still ship a working bucket — this fell back to
+  # nothing before and shipped a revision that 500'd on every evidence write.
+  local bucket="${ATTEST_EVIDENCE_BUCKET:-${PROJECT}-evidence}"
+  env_vars="${env_vars},ATTEST_EVIDENCE_BUCKET=${bucket}"
   if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
     env_vars="${env_vars},ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID}"
     # Reasoning engines are regional and do not exist in `global`, which is
