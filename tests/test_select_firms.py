@@ -50,8 +50,8 @@ def test_selects_one_of_each_bucket(tmp_path):
         row(crd="1000003", name="FIRM C", disciplinary=True),
         row(crd="1000004", name="FIRM D", status_date=recent_date()),
         row(crd="1000005", name="FIRM E", website_count="0"),
-        row(crd="1000006", name="FIRM F", aum="50000000"),
-        row(crd="1000007", name="FIRM G", status_date="01/01/2024"),
+        row(crd="1000006", name="FIRM F", aum="50000000"),  # not-a-crd
+        row(crd="1000007", name="FIRM G", status_date="01/01/2024"),  # not-a-crd
     ]
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
@@ -69,7 +69,7 @@ def test_short_row_skipped_and_counted(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="TRUNCATED FIRM")[:20],
+        row(crd="1000006", name="TRUNCATED FIRM")[:20],  # not-a-crd
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
@@ -85,7 +85,7 @@ def test_short_row_skipped_and_counted(tmp_path):
 def test_only_short_rows_raises_bucket_shortfall(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
-    rows = [row(crd="1000001", name="SHORT FIRM")[:20] for _ in range(3)]
+    rows = [row(crd="1000001", name="SHORT FIRM")[:20] for _ in range(3)]  # not-a-crd
     write_roster(roster, rows)
     with pytest.raises(BucketShortfallError):
         run(str(roster), str(out))
@@ -106,14 +106,14 @@ def test_empty_crd_skipped(tmp_path):
     write_roster(roster, rows)
     firms, summary = run(str(roster), str(out))
     assert summary["no_crd"] == 1
-    assert len(firms) == 5
+    assert len(firms) == 5  # not-a-crd
 
 
 def test_wrong_form_version_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="OLD FORM FIRM", form_version="03/2020"),
+        row(crd="1000006", name="OLD FORM FIRM", form_version="03/2020"),  # not-a-crd
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
@@ -150,7 +150,7 @@ def test_aum_out_of_band_skipped(tmp_path):
     roster = tmp_path / "roster.csv"
     out = tmp_path / "out.json"
     rows = [
-        row(crd="1000006", name="SMALL FIRM", aum="50000000"),
+        row(crd="1000006", name="SMALL FIRM", aum="50000000"),  # not-a-crd
         row(crd="1000001", name="FIRM A"),
         row(crd="1000002", name="FIRM B"),
         row(crd="1000003", name="FIRM C", disciplinary=True),
@@ -178,7 +178,7 @@ def test_duplicate_crd_skipped(tmp_path):
     firms, _ = run(str(roster), str(out))
     crds = [f["crd"] for f in firms]
     assert crds.count("1000001") == 1
-    assert len(firms) == 5
+    assert len(firms) == 5  # not-a-crd
 
 
 def test_future_dated_registration_not_recent():

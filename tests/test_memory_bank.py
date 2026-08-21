@@ -161,7 +161,7 @@ class TestGenerateMemories:
     def test_rejects_more_than_five_facts(self):
         bank = MemoryBank(_client({}), CONFIG)
         with pytest.raises(ValueError, match="at most 5"):
-            bank.generate_memories(facts=["a"] * 6, scope={"crd": "900001"})
+            bank.generate_memories(facts=["a"] * 6, scope={"crd": "900001"})  # not-a-crd
 
     def test_returns_generated_memories(self):
         op_name = "projects/p/locations/us-central1/operations/op1"
@@ -242,7 +242,7 @@ class TestPurge:
             ),
             CONFIG,
         )
-        assert bank.purge_memories('scope.crd="900001"', force=False) == 3
+        assert bank.purge_memories('scope.crd="900001"', force=False) == 3  # not-a-crd
 
     def test_force_deletes(self):
         op_name = "projects/p/locations/us-central1/operations/op1"
@@ -258,7 +258,7 @@ class TestPurge:
             ),
             CONFIG,
         )
-        assert bank.purge_memories('scope.crd="900001"', force=True) == 3
+        assert bank.purge_memories('scope.crd="900001"', force=True) == 3  # not-a-crd
 
     def test_inline_done_operation_is_not_polled(self):
         """Purge returns an already-done operation in the POST response.
@@ -313,10 +313,12 @@ class TestCRDValidation:
     """CRD validation is what keeps the interpolated purge filter safe."""
 
     # Every literal here must be a roster CRD or an obviously synthetic one.
-    # A short real registrant CRD (38, 70, 319, ...) would be functionally
-    # identical as a validation fixture and would put a real CRD back into the
-    # published history — which is exactly what §2a/§2c of the plan exist to
-    # keep out. "7" carries the same "short numeric string" test intent.
+    # Some real SEC registrants hold very short CRDs. Any such value would be
+    # functionally identical as a validation fixture, and using one would put a
+    # real registrant identifier back into published history — exactly what the
+    # pre-publication content sweep exists to keep out. "7" carries the same
+    # "short numeric string" test intent. See test_no_real_crd_in_tree.py,
+    # which fails the build if a real CRD reaches the working tree.
     @pytest.mark.parametrize("value", ["900001", " 900001 ", "7"])
     def test_accepts_numeric(self, value):
         assert _validate_crd(value) == value.strip()
@@ -350,7 +352,7 @@ class TestCRDValidation:
         class Boom(MemoryBank):
             def purge_memories(self, filter_expr, force=False):
                 called.append((filter_expr, force))
-                return 99
+                return 99  # not-a-crd
 
         monkeypatch.setattr(
             memory_bank.MemoryBank,

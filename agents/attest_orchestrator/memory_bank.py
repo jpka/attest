@@ -46,7 +46,7 @@ class InvalidCRDError(ValueError):
     """A CRD that is not a plain number.
 
     Every scope and filter in this module is keyed by CRD. The purge filter is
-    an AIP-160 expression built by string interpolation, so an unvalidated CRD
+    an AIP-160 expression built by string interpolation, so an unvalidated CRD  # not-a-crd
     containing a double quote can close the literal early and widen the filter
     to memories the caller never named. Rejecting anything non-numeric closes
     that off at the only place the value enters.

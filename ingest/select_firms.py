@@ -217,7 +217,7 @@ def main():
         fees = firm['compensation']
         billing = [v['adv_item'] for k, v in fees.items()
                    if isinstance(v, dict) and v.get('value')]
-        print(f"  [{firm['selection_bucket']:12}] CRD {firm['crd']:>7}  {firm['name'][:38]:38}"
+        print(f"  [{firm['selection_bucket']:12}] CRD {firm['crd']:>7}  {firm['name'][:38]:38}"  # not-a-crd
               f"  ${firm['aum']['total_usd']:,.0f}"
               f"  disciplinary={firm['disciplinary']['any_disclosure']}")
         print(f"                 compensated by: {'; '.join(billing) or 'nothing reported'}")

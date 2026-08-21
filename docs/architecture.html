@@ -151,7 +151,7 @@
           fill="rgba(251,146,60,0.3)" stroke="#fb923c" stroke-width="1.5"/>
     <text x="62" y="254" font-size="12" font-weight="600" fill="#fed7aa">Pub/Sub topic</text>
     <text x="62" y="269" font-size="9" fill="#94a3b8">attest-runs</text>
-    <text x="62" y="283" font-size="8" fill="#64748b">{"run":"monthly","crd":"900001"}</text>
+    <text x="62" y="283" font-size="8" fill="#64748b">{"run":"monthly","crd":"900001"}</text>  <!-- not-a-crd -->
 
     <!-- Push subscription -->
     <rect x="48" y="334" width="252" height="72" rx="6" fill="#0f172a"/>
@@ -231,7 +231,7 @@
     <rect x="336" y="556" width="288" height="72" rx="6"
           fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
     <text x="350" y="578" font-size="12" font-weight="600" fill="#ddd6fe">Firestore · Native mode</text>
-    <text x="350" y="593" font-size="7.5" fill="#94a3b8">rosters/{version}/firms/{crd} — Battery Registry</text>
+    <text x="350" y="593" font-size="7.5" fill="#94a3b8">rosters/{version}/firms/{crd} — Battery Registry</text>  <!-- not-a-crd -->
     <text x="350" y="605" font-size="7.5" fill="#94a3b8">registry/current → 32a6587ad82b</text>
     <text x="350" y="617" font-size="7.5" fill="#94a3b8">evidence_chain/meta — chain tail, advanced in a txn</text>
 
@@ -318,7 +318,7 @@
         <li>• <b>No project editor anywhere.</b> The runtime holds six narrow roles; <b>storage.objectCreator</b> is create-only, not overwrite.</li>
         <li>• A <b>separate push identity</b> holds only run.invoker, and the service is <b>--no-allow-unauthenticated</b>.</li>
         <li>• <b>purge is operator-only</b> — never attached to the agent. A Pub/Sub-triggered run reaches the tools with a payload the operator did not write.</li>
-        <li>• The purge filter is an interpolated <b>AIP-160</b> expression, so a CRD containing a quote could close the literal early and widen it. <b>_validate_crd</b> rejects non-numeric input at the single point the value enters.</li>
+        <li>• The purge filter is an interpolated <b>AIP-160</b> expression, so a CRD containing a quote could close the literal early and widen it. <b>_validate_crd</b> rejects non-numeric input at the single point the value enters.</li>  <!-- not-a-crd -->
         <li>• Published artefacts name <b>fictional firms only</b> — CRDs 900001–900005.</li>
       </ul>
     </div>

@@ -123,7 +123,7 @@ def main():
     firms = anonymize(firms)
 
     for firm in firms:
-        print(f"  [{firm['selection_bucket']:12}] CRD {firm['crd']:>7}  "
+        print(f"  [{firm['selection_bucket']:12}] CRD {firm['crd']:>7}  "  # not-a-crd
               f"{firm['name'][:38]:38}  {firm['city']}, {firm['state']}")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

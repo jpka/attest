@@ -18,7 +18,7 @@ def future_date():
     return (REFERENCE_DATE + timedelta(days=1)).strftime("%m/%d/%Y")
 
 
-def row(crd="1000001", name="TEST FIRM", aum="500000000", status_date="01/01/2010",
+def row(crd="1000001", name="TEST FIRM", aum="500000000", status_date="01/01/2010",  # not-a-crd
         form_version="10/2021", website_count="1", disciplinary=False,
         status="Approved", **fields):
     cells = [""] * len(adv.EXPECTED_HEADERS)

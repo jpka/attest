@@ -107,7 +107,7 @@ def main() -> int:
         f"{firm.get('name')} — Item 11 discloses "
         f"{len(firm.get('disciplinary', {}).get('items', []))} items",
     )
-    check("unknown CRD handled", get_adv_ground_truth("9999").get("error") == "not_found")
+    check("unknown CRD handled", get_adv_ground_truth("900099").get("error") == "not_found")
 
     # CR: only skip when the bucket is absent — let other init failures fail.
     try:
