@@ -109,6 +109,64 @@ def tracked_text_files() -> list[Path]:
 # A scope name says CRD without word boundaries around it: TestCRDValidation.
 SCOPE_NAME_CRD = re.compile(r"(?i)crd")
 
+def _advance_bracket_state(
+    line: str, depth: int, triple: str | None
+) -> tuple[int, str | None]:
+    """Return bracket depth and open-triple-quote state after consuming ``line``.
+
+    Indentation only delimits scope when Python is not inside an implicit
+    continuation. Without this, a value dedented inside a parenthesised literal
+    pops the enclosing scope and escapes the CRD-scope heuristic entirely::
+
+        class TestCRDValidation:
+            values = (
+        9999999999,
+            )
+
+    String and comment spans are skipped, so a bracket inside either does not
+    move the count.
+    """
+    i = 0
+    while i < len(line):
+        if triple is not None:
+            end = line.find(triple, i)
+            if end == -1:
+                return depth, triple
+            i = end + 3
+            triple = None
+            continue
+
+        char = line[i]
+        if char == "#":
+            break
+
+        quote3 = line[i : i + 3]
+        if quote3 in ('"""', "'''"):
+            triple = quote3
+            i += 3
+            continue
+
+        if char in "\"'":
+            i += 1
+            while i < len(line):
+                if line[i] == "\\":
+                    i += 2
+                    continue
+                if line[i] == char:
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth = max(0, depth - 1)
+        i += 1
+
+    return depth, triple
+
+
 SCOPE_DECL = re.compile(
     r"^(?P<indent>\s*)(?:class|(?:async\s+)?def)\s+(?P<name>\w+)"
 )
@@ -127,12 +185,16 @@ def scan(text: str) -> list[tuple[int, str, str]]:
     """
     findings: list[tuple[int, str, str]] = []
     scopes: list[tuple[int, str]] = []
+    depth = 0
+    triple: str | None = None
 
     for lineno, line in enumerate(text.splitlines(), start=1):
+        continued = depth > 0 or triple is not None
+        depth, triple = _advance_bracket_state(line, depth, triple)
         # Pop on any dedent, not only when the next declaration appears: a
         # module-level statement after a CRD-named class is out of that scope
         # and must not inherit it.
-        if line.strip():
+        if line.strip() and not continued:
             indent = len(line) - len(line.lstrip())
             while scopes and scopes[-1][0] >= indent:
                 scopes.pop()
@@ -303,3 +365,31 @@ def test_async_def_opens_a_crd_scope() -> None:
     )
     found = {value for _, form, value in scan(sample) if form == "crd-mention"}
     assert found == {"9999999999"}, found
+
+
+def test_scope_survives_an_implicit_continuation() -> None:
+    """A dedent inside brackets is not a dedent.
+
+    Introduced by the fix for the previous case: popping scope on physical
+    indentation alone let a value dedented inside a parenthesised literal
+    escape the CRD-scope heuristic completely.
+    """
+    sample = "\n".join(
+        [
+            "class TestCRDValidation:",
+            "    values = (",
+            "9999999999,",
+            "    )",
+        ]
+    )
+    found = {value for _, form, value in scan(sample) if form == "crd-mention"}
+    assert found == {"9999999999"}, found
+
+
+def test_brackets_inside_strings_and_comments_do_not_hold_scope_open() -> None:
+    for sample in (
+        'class TestCRDValidation:\n    s = "("\n\nTIMEOUT_SECONDS = 30',
+        "class TestCRDValidation:\n    pass  # (\n\nTIMEOUT_SECONDS = 30",
+        'class TestCRDValidation:\n    """doc (unclosed"""\n\nTIMEOUT_SECONDS = 30',
+    ):
+        assert not scan(sample), sample
