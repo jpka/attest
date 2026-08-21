@@ -302,6 +302,25 @@ review — stays in a private repository. It contains real registrant data, incl
 firm's Item 11 disciplinary disclosure, and is the evidence base the findings were measured
 on. It is available on request for judging.
 
+**One known deviation, stated plainly.** The pre-publication sweep is scoped by *content*
+rather than by the files an inspector expected to be affected — that is how §2a's leak was
+found — and it covers the full reachable history. That sweep returned one hit that survives
+in reachable history by design: `"38"` in a CRD-validation fixture in `tests/test_memory_bank.py`,
+carried in the stored diff of PR #3.
+
+CRD 38 is a real SEC registrant's number. What it is *in this file* is a bare integer testing
+"a short numeric string is accepted" — the same role `"7"` plays now. It names no firm and
+asserts nothing about one. The forward fix landed in commit `e12969a`; the surviving instances
+are in the PR #3 diff, which a branch rewrite cannot touch — a pull request's stored diff
+survives any force-push, which is the reason §2 renamed the original repo rather than rewriting
+it.
+
+The deviation was accepted rather than the repo rebuilt, for one stated reason: the PR history
+is the dated provenance trail this repository exists to produce, and rebuilding to remove a
+harmless fixture integer would trade that evidence for symbolic purity. The rule going forward
+is the unqualified one — no real CRD in published history — and this is the single documented
+exception, with its reason.
+
 ---
 
 ## A failure this repo learned the hard way
