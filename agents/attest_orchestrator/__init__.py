@@ -18,13 +18,14 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import agent, evidence_archive, memory_bank  # noqa: F401
+    from . import agent, evidence_archive, memory_bank, model_armor  # noqa: F401
 
 _LAZY_SUBMODULES = frozenset(
     {
         "agent",
         "evidence_archive",
         "memory_bank",
+        "model_armor",
         "registry",
         "scorer",
         "scorer_prompts",

@@ -8,6 +8,11 @@ Scope limit (attest-replan-0819.md, section 3, option a): Category C — fees an
 minimums — returns UNVERIFIABLE by construction. Fee schedules and account
 minimums live in ADV Part 2A, which the bulk roster does not contain. The scorer
 names Part 2A as the missing source rather than adjudicating what it cannot source.
+
+Every answer is screened by Model Armor before it reaches a prompt, and the
+screening record travels with the verdict. See `model_armor.py` — the short
+version is that an answer is untrusted third-party model output, and one that
+tries to instruct the scorer is refused rather than adjudicated.
 """
 
 from __future__ import annotations
@@ -18,12 +23,19 @@ import os
 import re
 from typing import Any
 
-from . import scorer_prompts
+from . import model_armor, scorer_prompts
 
 logger = logging.getLogger(__name__)
 
 # Category C is UNVERIFIABLE by construction. See section 3 above.
 CATEGORY_C = "C"
+
+# Verdicts this module returns without asking the model, and deliberately NOT
+# members of VALID_VERDICTS below: that set is the allowlist for what the
+# scorer model may emit, and a model able to emit "screening failed" could
+# launder an unscreened answer into the chain.
+BLOCKED_VERDICT = "BLOCKED-INJECTION"
+UNSCREENED_VERDICT = "ERROR-UNSCREENED"
 
 # Valid verdict classes — anything else is ERROR-UNPARSED. Shared by every
 # parse path so a model that emits "PASS" or "TRUE" cannot smuggle an
@@ -218,13 +230,20 @@ def score_answer(
     prompt: str,
     answer: str,
     _call: callable = None,  # injection seam for tests
+    _screen: callable = None,  # injection seam for tests
 ) -> dict:
     """Score one answer against the firm's ADV record.
 
-    Returns a dict with: verdict, rationale, rubric_version, model, category.
+    Returns a dict with: verdict, rationale, rubric_version, model, category,
+    and armor — the Model Armor screening record for this answer.
 
     Category C always returns UNVERIFIABLE without a model call — that is the
     scope limit, not a fallback.
+
+    Screening runs ahead of both, including ahead of Category C. Category C
+    reaches no prompt and so carries no injection risk, but a verdict that
+    carries no screening record is indistinguishable from one that was never
+    screened, and the archive has to be able to tell those apart.
     """
     # Normalize and validate category. Lowercase "c" must hit the scope limit,
     # not bypass it; unknown categories fail loudly rather than reaching the
@@ -247,6 +266,30 @@ def score_answer(
             "category": category,
         }
 
+    armor = model_armor.screen_answer(answer, _screen=_screen)
+    if armor.get("blocked"):
+        # Two different failures, and the record must not conflate them: the
+        # answer attacked the scorer, or the guardrail did not run.
+        unscreened = armor.get("state") == model_armor.ERROR
+        return {
+            "verdict": UNSCREENED_VERDICT if unscreened else BLOCKED_VERDICT,
+            "rationale": (
+                "Model Armor did not screen this answer, so it was not scored: "
+                f"{armor.get('detail', 'screening unavailable')}"
+                if unscreened
+                else (
+                    "Model Armor flagged prompt injection in the captured "
+                    "answer. The answer was not sent to the scorer, and no "
+                    "verdict on its claims is asserted. Detected: "
+                    f"{sorted(armor.get('findings', {}))}."
+                )
+            ),
+            "rubric_version": scorer_prompts.RUBRIC_VERSION,
+            "model": "model-armor",
+            "category": category,
+            "armor": armor,
+        }
+
     if category == CATEGORY_C:
         return {
             "verdict": "UNVERIFIABLE",
@@ -257,6 +300,7 @@ def score_answer(
             "rubric_version": scorer_prompts.RUBRIC_VERSION,
             "model": "scope-limit",
             "category": category,
+            "armor": armor,
         }
 
     scorer_prompt = build_scorer_prompt(firm, category, prompt, answer)
@@ -272,6 +316,7 @@ def score_answer(
             "rubric_version": scorer_prompts.RUBRIC_VERSION,
             "model": SCORER_MODEL,
             "category": category,
+            "armor": armor,
         }
 
     verdict, rationale = parse_verdict(raw)
@@ -281,4 +326,5 @@ def score_answer(
         "rubric_version": scorer_prompts.RUBRIC_VERSION,
         "model": SCORER_MODEL,
         "category": category,
+        "armor": armor,
     }
