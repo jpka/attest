@@ -144,8 +144,22 @@ cmd_deploy() {
   # a revision that ships without these screens nothing and says so at runtime
   # instead of at deploy time. `./deploy.sh armor` is what makes them resolve.
   env_vars="${env_vars},ATTEST_ARMOR_TEMPLATE=${ARMOR_TEMPLATE},ATTEST_ARMOR_LOCATION=${ARMOR_LOCATION}"
-  if [[ -n "${ATTEST_MEMORY_ENGINE_ID:-}" ]]; then
-    env_vars="${env_vars},ATTEST_MEMORY_ENGINE_ID=${ATTEST_MEMORY_ENGINE_ID}"
+  # The engine ID cannot be derived from $PROJECT the way the bucket and the
+  # armor template can — it is service-assigned. So recover it from the live
+  # revision when it is not exported. Without this, a standalone
+  # `./deploy.sh deploy` ships a revision with no ATTEST_MEMORY_ENGINE_ID and
+  # silently turns Memory Bank off: same failure as §13g's bucket, one variable
+  # over, and nothing in CI or the logs would say so.
+  local engine_id="${ATTEST_MEMORY_ENGINE_ID:-}"
+  if [[ -z "$engine_id" ]]; then
+    engine_id="$(gcloud run services describe "$SERVICE" --project "$PROJECT" \
+      --region "$REGION" --format \
+      'value(spec.template.spec.containers[0].env.filter("name:ATTEST_MEMORY_ENGINE_ID").extract("value").flatten())' \
+      2>/dev/null || true)"
+    [[ -n "$engine_id" ]] && echo "  recovered ATTEST_MEMORY_ENGINE_ID=${engine_id} from the live revision"
+  fi
+  if [[ -n "$engine_id" ]]; then
+    env_vars="${env_vars},ATTEST_MEMORY_ENGINE_ID=${engine_id}"
     # Reasoning engines are regional and do not exist in `global`, which is
     # where MODEL_LOCATION points for the subject model. Pass the engine's
     # region separately rather than letting the runtime reuse the model's.
