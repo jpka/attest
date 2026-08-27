@@ -419,12 +419,17 @@ JSON
   # Idempotent, and PATCH rather than skip-if-exists: a template created by an
   # older revision of this script would otherwise keep an older filter config
   # forever, and the config above is the security posture.
-  local response verb url
-  if curl -s -o /dev/null --fail -H "Authorization: Bearer ${token}" "${base}/${name}"; then
+  local response verb url http_code
+  http_code="$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${token}" "${base}/${name}")"
+  if [[ "$http_code" == "200" ]]; then
     echo "  template ${ARMOR_TEMPLATE} exists — reconciling config"
     verb="PATCH"; url="${base}/${name}?updateMask=filterConfig,templateMetadata"
-  else
+  elif [[ "$http_code" == "404" ]]; then
     verb="POST"; url="${base}/${parent}/templates?templateId=${ARMOR_TEMPLATE}"
+  else
+    echo "  GET ${base}/${name} returned HTTP ${http_code} — expected 200 or 404"
+    echo "  (a 403 here is the regional-host misreading; check ATTEST_ARMOR_LOCATION)"
+    return 1
   fi
   response="$(curl -s --fail-with-body -X "$verb" \
     -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \
@@ -454,12 +459,12 @@ JSON
     || { echo "  probe failed: $probe"; return 1; }
   printf '%s' "$probe" | python3 -c '
 import json, sys
-r = json.load(sys.stdin)["sanitizationResult"]
-pi = r["filterResults"]["pi_and_jailbreak"]["piAndJailbreakFilterResult"]
-print("  filterMatchState:", r["filterMatchState"])
-print("  pi_and_jailbreak:", pi["matchState"], pi.get("confidenceLevel", ""))
-print("  filter version:", r["sanitizationMetadata"]["filterVersionConfig"].get("filterVersion"))
-if pi["matchState"] != "MATCH_FOUND":
+r = json.load(sys.stdin).get("sanitizationResult", {})
+pi = (r.get("filterResults", {}).get("pi_and_jailbreak", {}).get("piAndJailbreakFilterResult") or {})
+print("  filterMatchState:", r.get("filterMatchState", ""))
+print("  pi_and_jailbreak:", pi.get("matchState", "MISSING"), pi.get("confidenceLevel", ""))
+print("  filter version:", r.get("sanitizationMetadata", {}).get("filterVersionConfig", {}).get("filterVersion", ""))
+if pi.get("matchState") != "MATCH_FOUND":
     sys.exit("  template did NOT flag a plain injection probe — do not deploy against it")
 ' || return 1
 
