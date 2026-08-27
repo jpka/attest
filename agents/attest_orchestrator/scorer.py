@@ -54,7 +54,9 @@ VALID_VERDICTS = {
 }
 
 # Same model family as premise_test.py's grader for comparability. §5.1: the
-# scoring loop is high-volume, so it stays on -flash-lite.
+# scoring loop is high-volume, so it stays on -flash-lite. The subject model
+# in the README (gemini-3.5-flash-lite) is the surveillance target; the scorer
+# below is a distinct, cheaper judge — the version skew is intentional.
 SCORER_MODEL = os.environ.get("ATTEST_SCORER_MODEL", "gemini-3.1-flash-lite")
 
 # ADV sections that bear on each prompt category. Sending only the relevant
@@ -255,6 +257,7 @@ def score_answer(
             "rubric_version": scorer_prompts.RUBRIC_VERSION,
             "model": "validation",
             "category": str(category),
+            "armor": {"state": model_armor.UNCONFIGURED, "blocked": False, "findings": {}},
         }
     category = category.strip().upper()
     if category not in CATEGORY_GROUND_TRUTH:
@@ -264,6 +267,7 @@ def score_answer(
             "rubric_version": scorer_prompts.RUBRIC_VERSION,
             "model": "validation",
             "category": category,
+            "armor": {"state": model_armor.UNCONFIGURED, "blocked": False, "findings": {}},
         }
 
     armor = model_armor.screen_answer(answer, _screen=_screen)
@@ -310,9 +314,12 @@ def score_answer(
         raw = call(scorer_prompt)
     except Exception as e:  # noqa: BLE001
         logger.error("scorer call failed: %s", e)
+        rationale = f"{type(e).__name__}: {e}"
+        if len(rationale) > 200:
+            rationale = rationale[:197] + "..."
         return {
             "verdict": "ERROR",
-            "rationale": f"{type(e).__name__}: {e}"[:200],
+            "rationale": rationale,
             "rubric_version": scorer_prompts.RUBRIC_VERSION,
             "model": SCORER_MODEL,
             "category": category,

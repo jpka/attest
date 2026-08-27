@@ -120,7 +120,8 @@ class ArmorConfig:
             # Model Armor is regional and is not served from `global`, which is
             # where GOOGLE_CLOUD_LOCATION points for the subject model. Same
             # reason ATTEST_MEMORY_LOCATION exists and is separate.
-            location=os.environ.get("ATTEST_ARMOR_LOCATION", DEFAULT_LOCATION),
+            location=(os.environ.get("ATTEST_ARMOR_LOCATION") or DEFAULT_LOCATION).strip()
+            or DEFAULT_LOCATION,
             template_id=template_id,
         )
 
@@ -292,9 +293,12 @@ def screen_answer(text: str, _screen: Callable[[str], dict] | None = None) -> di
         return _screen(text)
     except Exception as exc:  # noqa: BLE001
         logger.error("model_armor: screening failed: %s", exc)
+        detail = f"{type(exc).__name__}: {exc}"
+        if len(detail) > 200:
+            detail = detail[:197] + "..."
         return {
             "state": ERROR,
             "blocked": True,
             "findings": {},
-            "detail": f"{type(exc).__name__}: {exc}"[:200],
+            "detail": detail,
         }
