@@ -328,7 +328,7 @@
       <ul>
         <li>• Ground truth is <b>not a file the agent ships with</b>. It is a content-addressed roster in Firestore.</li>
         <li>• version = <b>sha256(json.dumps(roster, sort_keys=True))[:12]</b> — deliberately the same 12-char scheme as BATTERY_VERSION, so a roster version and a battery version are comparable strings.</li>
-        <li>• Immutable under its own name: editing the source produces a <b>new</b> version rather than mutating one. That is what makes "scored against roster <b>32a6587ad82b</b>" mean something a month later.</li>
+        <li>• Immutable under its own name: editing the source produces a <b>new</b> version rather than mutating one. That is what makes "scored against roster <b>f4ae1f08aedd</b>" mean something a month later.</li>
         <li>• <b>ATTEST_ROSTER_VERSION</b> pins a run; unset follows registry/current.</li>
         <li>• <b>No fallback to the bundled JSON.</b> A missing roster raises. Silently scoring against a roster nobody chose is the exact failure this product exists to detect.</li>
       </ul>
