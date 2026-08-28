@@ -141,6 +141,62 @@ A `500` here is what Pub/Sub sees as a nack, so it will retry with backoff.
 
 ---
 
+## Reproducing the tests
+
+Cheapest first. The first two need no Google Cloud project and no credentials.
+
+### Offline
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install pytest ruff google-cloud-firestore google-cloud-storage google-auth requests
+pytest -q
+ruff check ingest tests local_test.py conftest.py agents/attest_orchestrator/
+```
+
+Expect `166 passed` and `All checks passed!`. That is the dependency line
+`.github/workflows/ci.yml` installs, and both commands are the ones CI runs, so a green
+local suite and a green badge mean the same thing. Verified from an empty venv on
+2026-08-28 with gcloud credentials made unreachable.
+
+It is deliberately **not** the `pip install` line under [Prerequisites](#0-prerequisites).
+That one installs what the agent needs at runtime, including `google-adk`; it omits
+`pytest`, `ruff` and `google-auth`, and a suite run from it fails in
+`tests/test_evidence_archive.py` on `No module named 'google.cloud'`. Install the line
+above to run the tests, the line up there to run the agent.
+
+Every GCP surface is faked, per test module rather than centrally — `conftest.py` only puts
+the repo on `sys.path`. Firestore, Cloud Storage, Model Armor and the scorer model all have
+fakes in `tests/test_evidence_archive.py`, `test_memory_bank.py`, `test_model_armor.py` and
+`test_scorer.py`. So the suite proves wiring and establishes nothing about the deployed
+system, which is the failure note at the bottom of this README.
+
+### The check that needs nothing installed
+
+```bash
+python -c "import json, hashlib; print(hashlib.sha256(json.dumps(json.load(open('agents/attest_orchestrator/ground_truth.json')), sort_keys=True).encode()).hexdigest()[:12])"
+```
+
+Prints `f4ae1f08aedd`. That is `content_version()` from `agents/attest_orchestrator/registry.py`,
+the one content-hash scheme in the project and the version segment of every
+`rosters/{version}/firms/{crd}` path. A match means the roster in this checkout is
+byte-identical to the one the published evidence entries were scored against. Stdlib only,
+no venv, about a second.
+
+### With a model key
+
+`local_test.py` exercises tool wiring and one real scoring call. It needs
+`GOOGLE_API_KEY`, application-default credentials for the Firestore read, and
+`publish_registry.py` run first. See [Local first](#1-local-first).
+
+### Against the deployment
+
+`./deploy.sh smoke` publishes one message and tails the logs. See
+[Spin it up](#spin-it-up) for the full order and
+[What "working" looks like](#3-what-working-looks-like) for what to check — a `200` on the
+trigger route alone is not sufficient.
+
+---
 ## Layout
 
 ```
