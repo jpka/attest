@@ -239,7 +239,7 @@ roster version and a battery version are comparable strings, and a run records b
 Two properties fall out of content addressing. Republishing unchanged data is a no-op that
 lands on identical document paths, so the publisher is safe to re-run. And editing the
 source produces a *new* version rather than mutating one in place, so a roster is immutable
-under its own name. That is what makes "scored against roster `32a6587ad82b`" a claim
+under its own name. That is what makes "scored against roster `f4ae1f08aedd`" a claim
 that still means something a month later.
 
 `ATTEST_ROSTER_VERSION` pins a run to a specific roster. Unset means "follow
@@ -419,7 +419,7 @@ are real because they are what the scorer compares a model's claims against; a s
 distribution would make the findings untestable. `select_firms.py` performs the real
 selection and its output is **gitignored and never committed**; `anonymize.py` applies a
 deterministic positional fictionalization before `ground_truth.json` is written. The
-committed roster `32a6587ad82b` regenerates identically from that SEC release followed by
+committed roster `f4ae1f08aedd` regenerates identically from that SEC release followed by
 that anonymization.
 
 **Residual re-identification risk, acknowledged plainly.** The quantitative values are real

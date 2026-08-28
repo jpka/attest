@@ -41,7 +41,7 @@ Republishing unchanged data is a no-op (the version *is* the content), so
 
 ## Reproducing the committed roster
 
-The committed `ground_truth.json` (roster `32a6587ad82b`) is fictionalized. It was produced on
+The committed `ground_truth.json` (roster `f4ae1f08aedd`) is fictionalized. It was produced on
 2026-08-11 from the `IA_SEC_-_FIRM_ROSTER_FOIA_DOWNLOAD_-_34640308.CSV` release.
 `select_firms.py` is deterministic against the pinned `REFERENCE_DATE` — the same roster CSV
 always yields the same five real firms — and `anonymize.py` then maps them positionally to the
