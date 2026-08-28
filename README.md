@@ -174,14 +174,15 @@ system. That is the failure note at the bottom of this README.
 ### The check that needs nothing installed
 
 ```bash
-python -c "import json, hashlib; print(hashlib.sha256(json.dumps(json.load(open('agents/attest_orchestrator/ground_truth.json')), sort_keys=True).encode()).hexdigest()[:12])"
+python3 -c "import json, hashlib; print(hashlib.sha256(json.dumps(json.load(open('agents/attest_orchestrator/ground_truth.json')), sort_keys=True).encode()).hexdigest()[:12])"
 ```
 
 Prints `f4ae1f08aedd`. That is `content_version()` from `agents/attest_orchestrator/registry.py`,
 the one content-hash scheme in the project and the version segment of every
 `rosters/{version}/firms/{crd}` path. A match means the roster in this checkout is
 byte-identical to the one the published evidence entries were scored against. Stdlib only,
-no venv, about a second.
+no venv, about a second. `python3` and not `python` here on purpose: with no venv active,
+Debian-family Linux has only the former.
 
 ### With a model key
 
