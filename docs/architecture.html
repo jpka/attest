@@ -102,26 +102,29 @@
     <text x="880" y="102" font-size="9" fill="#fbbf24" letter-spacing="0.08em">VERTEX AI · location = global</text>
 
     <!-- IAM trust boundary around the two service identities -->
-    <rect x="48" y="640" width="752" height="132" rx="8" fill="none"
+    <rect x="48" y="640" width="752" height="140" rx="8" fill="none"
           stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
-    <text x="64" y="634" font-size="8" fill="#fb7185" letter-spacing="0.06em">IAM · least privilege, no project editor</text>
+    <text x="64" y="772" font-size="8" fill="#fb7185" letter-spacing="0.06em">IAM · least privilege, no project editor</text>
 
-    <!-- ===== ARROWS (early = behind components) ===== -->
+    <!-- ===== ARROWS =====
+         Drawn before the components, but routed so nothing is occluded: the two
+         IAM connectors thread the gaps in the state row (316-336 and 608-640)
+         rather than passing behind Memory Bank, Firestore and attest-runtime. -->
     <!-- Scheduler -> topic -->
     <path d="M 172 190 L 172 232" stroke="#64748b" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
     <!-- topic -> subscription -->
     <path d="M 172 292 L 172 334" stroke="#fb923c" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
     <!-- subscription -> Cloud Run trigger route -->
     <path d="M 300 364 L 396 364" stroke="#64748b" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
-    <text x="308" y="356" font-size="7.5" fill="#94a3b8">POST /trigger/pubsub</text>
+    <text x="307" y="356" font-size="6.5" fill="#94a3b8">POST /trigger/pubsub</text>
     <!-- push identity auth (security, dashed rose) -->
-    <path d="M 232 700 L 232 400 L 392 400" stroke="#fb7185" stroke-width="1"
+    <path d="M 304 690 L 326 690 L 326 400 L 392 400" stroke="#fb7185" stroke-width="1"
           stroke-dasharray="4,4" fill="none" marker-end="url(#ar-rose)"/>
-    <text x="240" y="392" font-size="7" fill="#fb7185">run.invoker</text>
+    <text x="332" y="392" font-size="7" fill="#fb7185">run.invoker</text>
     <!-- runtime SA -> Cloud Run -->
-    <path d="M 560 700 L 560 508" stroke="#fb7185" stroke-width="1"
+    <path d="M 624 656 L 624 508" stroke="#fb7185" stroke-width="1"
           stroke-dasharray="4,4" fill="none" marker-end="url(#ar-rose)"/>
-    <text x="568" y="620" font-size="7" fill="#fb7185">runs as</text>
+    <text x="618" y="548" font-size="7" fill="#fb7185" text-anchor="end">runs as</text>
     <!-- Cloud Run -> Model Armor. Regional, so it stays inside the boundary,
          and it sits BEFORE the model call: a flagged answer never reaches it. -->
     <path d="M 600 308 L 600 274" stroke="#fb7185" stroke-width="1.3" fill="none" marker-end="url(#ar-rose)"/>
@@ -135,10 +138,10 @@
     <!-- Cloud Run -> Firestore -->
     <path d="M 480 508 L 480 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
     <!-- Cloud Run -> GCS -->
-    <path d="M 640 508 L 640 540 L 700 540 L 700 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
+    <path d="M 660 508 L 660 540 L 700 540 L 700 556" stroke="#a78bfa" stroke-width="1.3" fill="none" marker-end="url(#ar)"/>
     <!-- Cloud Run -> Trace/Logging -->
     <path d="M 700 468 L 892 600" stroke="#64748b" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
-    <text x="770" y="536" font-size="7.5" fill="#94a3b8">spans · logs · metrics</text>
+    <text x="836" y="545" font-size="7.5" fill="#94a3b8">spans · logs · metrics</text>
 
     <!-- ===== COMPONENTS ===== -->
     <!-- Cloud Scheduler -->
@@ -171,7 +174,7 @@
     <rect x="396" y="308" width="304" height="200" rx="6"
           fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
     <text x="410" y="330" font-size="12" font-weight="600" fill="#a7f3d0">Cloud Run · attest-orchestrator</text>
-    <text x="410" y="344" font-size="8" fill="#64748b">rev 00015-zxn · min 0 / max 3 · 1Gi · no-allow-unauthenticated</text>
+    <text x="410" y="344" font-size="7" fill="#64748b">rev 00015-zxn · min 0 / max 3 · 1Gi · no-allow-unauthenticated</text>
     <text x="410" y="360" font-size="9" fill="#94a3b8">Google ADK agent — root_agent attest_orchestrator</text>
 
     <!-- the six model-reachable tools -->
@@ -189,10 +192,10 @@
     <text x="559" y="436" font-size="7.5" fill="#ddd6fe">recall_firm_memory</text>
 
     <!-- purge: exists in code, deliberately NOT attached -->
-    <rect x="410" y="452" width="276" height="24" rx="4" fill="rgba(136,19,55,0.4)"
+    <rect x="410" y="452" width="276" height="26" rx="4" fill="rgba(136,19,55,0.4)"
           stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3"/>
     <text x="417" y="462" font-size="7" fill="#fda4af">purge_firm_memory — operator-only, NOT model-reachable</text>
-    <text x="417" y="472" font-size="6.5" fill="#94a3b8">a triggered run reaches tools with a payload the operator did not write</text>
+    <text x="417" y="472" font-size="6" fill="#94a3b8">a triggered run reaches tools with a payload the operator did not write</text>
 
     <text x="410" y="492" font-size="8" fill="#64748b">--trace_to_cloud --otel_to_cloud · trigger_sources=pubsub</text>
     <text x="410" y="503" font-size="7.5" fill="#64748b">6 tools attached, asserted by name — never by count</text>
@@ -232,7 +235,7 @@
     <text x="76" y="589" font-size="8" fill="#94a3b8">reasoningEngine · us-central1</text>
     <text x="76" y="602" font-size="7" fill="#a78bfa">regional — engines do not exist in global, so this</text>
     <text x="76" y="611" font-size="7" fill="#a78bfa">cannot share the model's location variable</text>
-    <text x="76" y="622" font-size="6.5" fill="#64748b">gemini-2.5-flash · text-embedding-005 (required for retrieval)</text>
+    <text x="76" y="622" font-size="6" fill="#64748b">gemini-2.5-flash · text-embedding-005 (required for retrieval)</text>
 
     <!-- Observability -->
     <rect x="892" y="556" width="296" height="88" rx="6" fill="#0f172a"/>
@@ -246,8 +249,8 @@
 
     <!-- ===== STATE ===== -->
     <!-- Firestore -->
-    <rect x="336" y="556" width="288" height="72" rx="6" fill="#0f172a"/>
-    <rect x="336" y="556" width="288" height="72" rx="6"
+    <rect x="336" y="556" width="272" height="72" rx="6" fill="#0f172a"/>
+    <rect x="336" y="556" width="272" height="72" rx="6"
           fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
     <text x="350" y="578" font-size="12" font-weight="600" fill="#ddd6fe">Firestore · Native mode</text>
     <text x="350" y="593" font-size="7.5" fill="#94a3b8">rosters/{version}/firms/{crd} — Battery Registry</text>  <!-- not-a-crd -->
@@ -259,14 +262,14 @@
     <rect x="640" y="556" width="160" height="72" rx="6"
           fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
     <text x="652" y="578" font-size="11" font-weight="600" fill="#ddd6fe">Cloud Storage</text>
-    <text x="652" y="592" font-size="7" fill="#94a3b8">attest-505313-evidence</text>
-    <text x="652" y="604" font-size="7" fill="#94a3b8">one immutable object</text>
-    <text x="652" y="615" font-size="7" fill="#94a3b8">per entry · uniform BLA</text>
-    <text x="652" y="625" font-size="6.5" fill="#a78bfa">ifGenerationMatch=0</text>
+    <text x="652" y="590" font-size="7" fill="#94a3b8">attest-505313-evidence</text>
+    <text x="652" y="601" font-size="7" fill="#94a3b8">one immutable object</text>
+    <text x="652" y="612" font-size="7" fill="#94a3b8">per entry · uniform BLA</text>
+    <text x="652" y="622" font-size="6.5" fill="#a78bfa">ifGenerationMatch=0</text>
 
     <!-- ===== IDENTITIES ===== -->
-    <rect x="64" y="656" width="240" height="100" rx="6" fill="#0f172a"/>
-    <rect x="64" y="656" width="240" height="100" rx="6"
+    <rect x="64" y="656" width="240" height="104" rx="6" fill="#0f172a"/>
+    <rect x="64" y="656" width="240" height="104" rx="6"
           fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
     <text x="78" y="678" font-size="11" font-weight="600" fill="#fda4af">attest-pubsub-push</text>
     <text x="78" y="692" font-size="8" fill="#94a3b8">the Pub/Sub push identity</text>
@@ -275,8 +278,8 @@
     <text x="78" y="737" font-size="7" fill="#64748b">to invoke one Cloud Run service</text>
     <text x="78" y="750" font-size="7" fill="#64748b">1 role</text>
 
-    <rect x="440" y="656" width="240" height="100" rx="6" fill="#0f172a"/>
-    <rect x="440" y="656" width="240" height="100" rx="6"
+    <rect x="440" y="656" width="270" height="104" rx="6" fill="#0f172a"/>
+    <rect x="440" y="656" width="270" height="104" rx="6"
           fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
     <text x="454" y="678" font-size="11" font-weight="600" fill="#fda4af">attest-runtime</text>
     <text x="454" y="692" font-size="8" fill="#94a3b8">what the service runs as</text>
@@ -284,7 +287,7 @@
     <text x="454" y="719" font-size="7" fill="#cbd5e1">cloudtrace.agent · logging.logWriter</text>
     <text x="454" y="730" font-size="7" fill="#cbd5e1">monitoring.metricWriter</text>
     <text x="454" y="741" font-size="7" fill="#cbd5e1">storage.objectCreator · modelarmor.user</text>
-    <text x="454" y="752" font-size="7" fill="#64748b">7 roles · modelarmor.user is sanitize-only, not template-edit</text>
+    <text x="454" y="750" font-size="6.5" fill="#64748b">7 roles · modelarmor.user is sanitize-only, not template-edit</text>
 
     <!-- ===== LEGEND — outside every boundary. Lowest boundary ends at y=796. ===== -->
     <text x="48" y="836" font-size="8" fill="#64748b" letter-spacing="0.08em">LEGEND</text>
