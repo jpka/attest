@@ -155,8 +155,8 @@ ruff check ingest tests local_test.py conftest.py agents/attest_orchestrator/
 ```
 
 Expect `166 passed` and `All checks passed!`. That is the dependency line
-`.github/workflows/ci.yml` installs, and both commands are the ones CI runs, so a green
-local suite and a green badge mean the same thing. Verified from an empty venv on
+`.github/workflows/ci.yml` installs, and both commands are the ones it runs, so a green
+local suite and a green CI run mean the same thing. Verified from an empty venv on
 2026-08-28 with gcloud credentials made unreachable.
 
 It is deliberately **not** the `pip install` line under [Prerequisites](#0-prerequisites).
@@ -165,11 +165,11 @@ That one installs what the agent needs at runtime, including `google-adk`; it om
 `tests/test_evidence_archive.py` on `No module named 'google.cloud'`. Install the line
 above to run the tests, the line up there to run the agent.
 
-Every GCP surface is faked, per test module rather than centrally — `conftest.py` only puts
-the repo on `sys.path`. Firestore, Cloud Storage, Model Armor and the scorer model all have
-fakes in `tests/test_evidence_archive.py`, `test_memory_bank.py`, `test_model_armor.py` and
+Each test module fakes its own Google Cloud calls. `conftest.py` only puts the repo on
+`sys.path`. Firestore, Cloud Storage, Model Armor and the scorer model have fakes in
+`tests/test_evidence_archive.py`, `test_memory_bank.py`, `test_model_armor.py` and
 `test_scorer.py`. So the suite proves wiring and establishes nothing about the deployed
-system, which is the failure note at the bottom of this README.
+system. That is the failure note at the bottom of this README.
 
 ### The check that needs nothing installed
 
@@ -193,10 +193,11 @@ no venv, about a second.
 
 `./deploy.sh smoke` publishes one message and tails the logs. See
 [Spin it up](#spin-it-up) for the full order and
-[What "working" looks like](#3-what-working-looks-like) for what to check — a `200` on the
+[What "working" looks like](#3-what-working-looks-like) for what to check. A `200` on the
 trigger route alone is not sufficient.
 
 ---
+
 ## Layout
 
 ```
