@@ -154,7 +154,7 @@ pytest -q
 ruff check ingest tests local_test.py conftest.py agents/attest_orchestrator/
 ```
 
-Expect `166 passed` and `All checks passed!`. That is the dependency line
+Expect `173 passed` and `All checks passed!`. That is the dependency line
 `.github/workflows/ci.yml` installs, and both commands are the ones it runs, so a green
 local suite and a green CI run mean the same thing. Verified from an empty venv on
 2026-08-28 with gcloud credentials made unreachable.
@@ -218,7 +218,7 @@ ingest/
 deploy.sh                 idempotent gcloud driver
 publish_registry.py       ground_truth.json -> Firestore
 local_test.py             run everything locally first
-tests/                    166 tests; ruff + pytest on every push and PR
+tests/                    173 tests; ruff + pytest on every push and PR
 ```
 
 ## The Battery Registry
